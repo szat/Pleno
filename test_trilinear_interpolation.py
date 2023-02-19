@@ -119,6 +119,21 @@ class TestTrilinearInterpolation(unittest.TestCase):
         computed_value = trilinear_interpolation_dot(xyz, self.c2, np.zeros(3), 2.0, 2.0, 2.0)
         np.testing.assert_array_almost_equal(expected_value, computed_value)
 
+    def test_trilinear_coefficients_two_entries(self):
+        xyz = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+
+        # Shape n x c
+        expected_value = np.array([[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125],
+                                   [0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]])
+        computed_value = trilinear_coefficients(xyz, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
+    def test_trilinear_coefficients_one_entry(self):
+        # Test interpolation within bounds of the data array
+        xyz = np.array([1.0, 1.0, 1.0])
+        expected_value = np.array([[0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]])
+        computed_value = trilinear_coefficients(xyz, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
 
 if __name__=='__main__':
     unittest.main()
