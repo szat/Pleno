@@ -119,3 +119,6 @@ class TestTrilinearInterpolation(unittest.TestCase):
         computed_value = trilinear_interpolation_dot(xyz, self.c2, np.zeros(3), 2.0, 2.0, 2.0)
         np.testing.assert_array_almost_equal(expected_value, computed_value)
 
+
+if __name__=='__main__':
+    unittest.main()
