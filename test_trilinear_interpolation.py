@@ -1,6 +1,6 @@
 import numpy as np
 import unittest
-from trilinear_interpolation import trilinear_interpolation
+from trilinear_interpolation import *
 
 
 # https://en.wikipedia.org/wiki/Trilinear_interpolation
@@ -84,5 +84,38 @@ class TestTrilinearInterpolation(unittest.TestCase):
                         [2.0, 0.0, 2.0]])
         expected_value = np.array([0,0,0,0,2,2,2,2]).reshape([8,1])
         computed_value = trilinear_interpolation(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
+    def test_interpolation2_inside_box(self):
+        # Test interpolation within bounds of the data array
+        xyz = np.array([1.0, 1.0, 1.0])
+        expected_value = np.array([1.0]).reshape([1, 1])
+        computed_value = trilinear_interpolation_dot(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        self.assertAlmostEqual(expected_value, computed_value, places=10)
+
+    def test_interpolation2_inside_box2(self):
+        # Test interpolation within bounds of the data array
+        xyz = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+
+        # Shape n x 1
+        expected_value = np.array([1.0, 1.0]).reshape([2, 1])
+        computed_value = trilinear_interpolation_dot(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
+    def test_interpolation2_inside_box_many_colors(self):
+        # Test interpolation within bounds of the data array
+        xyz = np.array([1.0, 1.0, 1.0])
+        # Shape 1 x c
+        expected_value = np.array([1.0, 2.0]).reshape([1, 2])
+        computed_value = trilinear_interpolation_dot(xyz, self.c2, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
+    def test_interpolation2_inside_box2_many_colors(self):
+        # Test interpolation within bounds of the data array
+        xyz = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+
+        # Shape n x c
+        expected_value = np.array([[1.0, 2.0], [1.0, 2.0]]).reshape([2, 2])
+        computed_value = trilinear_interpolation_dot(xyz, self.c2, np.zeros(3), 2.0, 2.0, 2.0)
         np.testing.assert_array_almost_equal(expected_value, computed_value)
 
