@@ -27,12 +27,29 @@ class TestRenderer(unittest.TestCase):
         res = sh_spherical(theta, phi)
         np.testing.assert_array_almost_equal(res.shape, np.array([1,9]))
 
-    def test_sh_spherical_shape_many_entry(self):
-        theta, phi = self.angles[:,0], self.angles[:,1]
-        res = sh_spherical(theta, phi)
+    def test_sh_cartesian_shape_one_entry(self):
+        xyz = np.random.rand(3)
+        res = sh_cartesian(xyz)
+        np.testing.assert_array_almost_equal(res.shape, np.array(9))
+
+    def test_sh_cartesian_shape_one_entry_vec(self):
+        xyz = np.random.rand(1, 3)
+        res = sh_cartesian(xyz)
+        np.testing.assert_array_almost_equal(res.shape, np.array([1, 9]))
+
+    def test_sh_cartesian_shape_many_entry(self):
+        xyz = np.random.rand(4, 3)
+        res = sh_cartesian(xyz)
         np.testing.assert_array_almost_equal(res.shape, np.array([4,9]))
 
-    def test_sh_spherical_vs_scipy(self):
+    def test_sh_cartesian_shape_many_entry(self):
+        xyz = np.random.rand(4, 3)
+        res = sh_cartesian(xyz)
+        for i in range(4):
+            res2 = sh_cartesian(xyz[i, :])
+            np.testing.assert_array_almost_equal(res[i], res2)
+
+    def test_sh_different_formulas(self):
         for i in range(len(self.angles)):
             theta, phi = self.angles[i, 0], self.angles[i, 1]
             res1 = sh_spherical(theta, phi)
@@ -48,3 +65,7 @@ class TestRenderer(unittest.TestCase):
             np.testing.assert_array_almost_equal(res1, res2)
             np.testing.assert_array_almost_equal(res2, res3)
             np.testing.assert_array_almost_equal(res3, res4)
+
+
+if __name__=='__main__':
+    unittest.main()

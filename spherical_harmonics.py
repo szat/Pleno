@@ -9,6 +9,57 @@ import numpy as np
 
 from scipy.special import sph_harm
 
+K_CONST = np.array([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
+       1.09254843, 0.31539157, 1.09254843, 0.54627422])
+
+
+# My code
+def sh_cartesian(xyz):
+    # K = np.array([(1 / 2) * np.sqrt(1 / np.pi),
+    #               np.sqrt(3 / (4 * np.pi)), np.sqrt(3 / (4 * np.pi)), np.sqrt(3 / (4 * np.pi)),
+    #               (1 / 2) * np.sqrt(15 / np.pi), (1 / 2) * np.sqrt(15 / np.pi), (1 / 4) * np.sqrt(5 / np.pi),
+    #               (1 / 2) * np.sqrt(15 / np.pi), (1 / 4) * np.sqrt(15 / np.pi)])
+    K = K_CONST
+    if xyz.ndim == 1:
+        r = np.linalg.norm(xyz)
+        xyz = xyz / r
+        x, y, z = xyz[0], xyz[1], xyz[2]
+        vec = np.array([1, y, z, x, x * y, y * z, 3 * z ** 2 - 1, x * z, x ** 2 - y ** 2])
+        return vec * K
+    else:
+        r = np.linalg.norm(xyz, axis=1)
+        r = np.expand_dims(r, 1)
+        xyz = xyz / r
+        x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+        ones = np.ones(x.shape)
+        vec = np.vstack([ones, y, z, x, x * y, y * z, 3 * z ** 2 - 1, x * z, x ** 2 - y ** 2]).T
+        return vec * K
+
+
+# My code
+def sh_spherical(theta, phi):
+    root3 = np.sqrt(3 / np.pi)
+    root5 = np.sqrt(15 / np.pi)
+    K = np.array([0.5 * np.sqrt(1 / np.pi),
+                  0.5 * root3,
+                  0.5 * root3,
+                  0.5 * root3,
+                  0.5 * root5,
+                  0.5 * root5,
+                  0.25 * np.sqrt(5 / np.pi),
+                  0.5 * root5,
+                  0.25 * root5])
+
+    x = np.sin(theta) * np.cos(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(theta)
+    ones = np.ones(x.shape)
+    legendre = np.array([ones, y, z, x, x * y, y * z, 3 * z * z - 1, x * z, x * x - y * y]).T
+    res = legendre * K
+    if res.shape == (9,):
+        res = np.expand_dims(res, 0)
+    return res
+
 
 # From the book "Gritty Details", translated from C++ using ChatGPT
 def K(l, m):
@@ -78,41 +129,3 @@ def real_sph_harm_vec_scipy(theta, phi):
     Y2p2 = real_sph_harm_scipy(2, 2, theta, phi)
     return np.array([Y00, Y1m, Y10, Y1p, Y2m2, Y2m1, Y20, Y2p1, Y2p2])
 
-
-# My code
-def sh_spherical(theta, phi):
-    root3 = np.sqrt(3 / np.pi)
-    root5 = np.sqrt(15 / np.pi)
-    K = np.array([0.5 * np.sqrt(1 / np.pi),
-                  0.5 * root3,
-                  0.5 * root3,
-                  0.5 * root3,
-                  0.5 * root5,
-                  0.5 * root5,
-                  0.25 * np.sqrt(5 / np.pi),
-                  0.5 * root5,
-                  0.25 * root5])
-
-    x = np.sin(theta) * np.cos(phi)
-    y = np.sin(theta) * np.sin(phi)
-    z = np.cos(theta)
-    ones = np.ones(x.shape)
-    legendre = np.array([ones, y, z, x, x * y, y * z, 3 * z * z - 1, x * z, x * x - y * y]).T
-    res = legendre * K
-    if res.shape == (9,):
-        res = np.expand_dims(res, 0)
-    return res
-
-
-# My code
-def sh_cartesian(xyz):
-    r = np.linalg.norm(xyz)
-    K = np.array([(1 / 2) * np.sqrt(1 / np.pi),
-                  np.sqrt(3 / (4 * np.pi)), np.sqrt(3 / (4 * np.pi)), np.sqrt(3 / (4 * np.pi)),
-                  (1 / 2) * np.sqrt(15 / np.pi), (1 / 2) * np.sqrt(15 / np.pi), (1 / 4) * np.sqrt(5 / np.pi),
-                  (1 / 2) * np.sqrt(15 / np.pi), (1 / 4) * np.sqrt(15 / np.pi)])
-    xyz = xyz / r
-    x, y, z = xyz[0], xyz[1], xyz[2]
-
-    vec = np.array([1, y, z, x, x * y, y * z, 3 * z ** 2 - 1, x * z, x ** 2 - y ** 2])
-    return vec * K
