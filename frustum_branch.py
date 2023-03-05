@@ -26,7 +26,7 @@ def rays_to_frustrum(origins: np.ndarray, dirs: np.ndarray, samples: np.ndarray,
                  for the ray as defined above
         delta_voxel (np.array): of length 3, defining (dx, dy, dz) for voxels. Default (1, 1, 1)
 
-    Returns: np.ndarray of shape (nb_rays, nb_samples, 8, 3), forth dim gives the integer 3d-coordinates ijk
+    Returns: np.ndarray of shape (nb_rays, nb_samples, 8, 3), fourth dim gives the integer 3d-coordinates ijk
                     of 8 neightbours of bottom-left-closest voxel containing resp. sample
     """
 
@@ -59,9 +59,9 @@ def frustrum_to_harmonics(frustum: np.ndarray, ray_dirs: np.ndarray,
     
     Args: 
         frustum (np.ndarray): of shape (nb_rays, nb_samples, 8, 3), given by rays_to_frustrum function
-        ray_dirs (np.ndarray): of 2 shape(nb_rays, 2), second dim gives (theta, phi)
-        grid (np.ndarray): of shape 9 (xdim, ydim zdim, 3, 9) giving model 9 harmonic coeficients per color channel
-        opacity (np.ndarray): of shape 9 (xdim, ydim zdim) giving model opacity
+        ray_dirs (np.ndarray): of shape (nb_rays, 2), second dim gives (theta, phi)
+        grid (np.ndarray): of shape (xdim, ydim zdim, 3, 9) giving model 9 harmonic coeficients per color channel
+        opacity (np.ndarray): of shape (xdim, ydim, zdim) giving model opacity
         
     Returns: Tuple[np.ndarray, np.ndarray] resp. neigh_harmonics and neigh_densities. First array is of shape
     (nb_rays, nb_samples, 8, 3, 9) and gives the evaluated 9 harmonics weigthed by model coefficients for each
