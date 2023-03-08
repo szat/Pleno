@@ -25,6 +25,20 @@ class TestArchitecture(unittest.TestCase):
         np.testing.assert_almost_equal(tnear, tn)
         np.testing.assert_almost_equal(tfar, tf)
 
+    def test_origin_outside_intersect_many(self):
+        box_min = np.zeros(3)
+        box_max = np.array([2.0, 2.0, 2.0])
+        ray_origin = np.array([-1.0, 1.0, 1.0]) #middle of cube
+        ray_dir = np.array([1.0, 0.0, 0.0])
+        ray_origin = np.tile(ray_origin, (2, 1))
+        ray_dir = np.tile(ray_dir, (2, 1))
+        ray_inv_dir = 1/ray_dir
+        tnear = np.array([1, 1])
+        tfar = np.array([3, 3])
+        tn, tf = intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max)
+        np.testing.assert_almost_equal(tnear, tn)
+        np.testing.assert_almost_equal(tfar, tf)
+
     def test_origin_inside_intersect(self):
         box_min = np.zeros(3)
         box_max = np.array([2.0, 2.0, 2.0])

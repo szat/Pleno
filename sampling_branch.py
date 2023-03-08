@@ -14,20 +14,35 @@ def intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max):
         ray_origin = np.expand_dims(ray_origin, 0)
         ray_inv_dir = np.expand_dims(ray_inv_dir, 0)
 
-    tmin = np.array([-np.inf])
-    tmax = np.array([np.inf])
+    tmin = np.ones(len(ray_origin)) * -np.inf
+    tmax = np.ones(len(ray_origin)) * np.inf
+    # tmin = np.tile(tmin, (len(ray_origin), 1))
+    # tmax = np.array([np.inf])
+    # tmax = np.tile(tmax, (len(ray_origin), 1))
 
-    for i in range(3):
-        t0 = (box_min[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
-        t1 = (box_max[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
+    t0 = (box_min - ray_origin) * ray_inv_dir
+    t1 = (box_max - ray_origin) * ray_inv_dir
 
-        # swap
-        tmp = t1[ray_inv_dir[:, i] < 0.0]
-        t1[ray_inv_dir[:, i] < 0] = t0[ray_inv_dir[:, i] < 0]
-        t0[ray_inv_dir[:, i] < 0] = tmp
+    tsmaller = np.min([t0, t1], axis=0)
+    tbigger = np.max([t0, t1], axis=0)
 
-        tmin = np.max([t0, tmin], axis=0)
-        tmax = np.min([t1, tmax], axis=0)
+    tmin = np.max([tmin, np.max(tsmaller, axis=1)])
+    tmax = np.min([tmax, np.min(tbigger, axis=1)])
+
+
+    # tmax = np.min(tmax, min(tbigger[0], min(tbigger[1], tbigger[2])));
+    #
+    # for i in range(3):
+    #     t0 = (box_min[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
+    #     t1 = (box_max[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
+    #
+    #     # swap
+    #     tmp = t1[ray_inv_dir[:, i] < 0.0]
+    #     t1[ray_inv_dir[:, i] < 0] = t0[ray_inv_dir[:, i] < 0]
+    #     t0[ray_inv_dir[:, i] < 0] = tmp
+    #
+    #     tmin = np.max([t0, tmin], axis=0)
+    #     tmax = np.min([t1, tmax], axis=0)
 
     return tmin, tmax
 
