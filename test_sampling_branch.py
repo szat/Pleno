@@ -19,6 +19,8 @@ class TestArchitecture(unittest.TestCase):
         S = rays_to_samples(R, self.nb_samples)
         np.testing.assert_array_almost_equal(S.shape, np.array([self.nb_rays, self.nb_samples, 3]))
 
+    def test_edge_case
+
     def test_samples_to_icoeffs(self):
         S = np.random.rand(self.nb_rays, self.nb_samples, 3)
         IC = samples_to_icoeffs(S)
@@ -28,6 +30,8 @@ class TestArchitecture(unittest.TestCase):
         S = np.random.rand(self.nb_rays, self.nb_samples, 3)
         N = samples_to_nbh(S)
         np.testing.assert_array_almost_equal(N.shape, np.array([self.nb_rays, self.nb_samples, 8]))
+
+
 
 
 if __name__=='__main__':
