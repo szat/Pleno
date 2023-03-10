@@ -15,21 +15,34 @@ class TestArchitecture(unittest.TestCase):
         self.nb_samples = 11
 
     def test_rays_to_samples(self):
-        R = np.random.rand(self.nb_rays, 6)
-        S = rays_to_samples(R, self.nb_samples)
-        np.testing.assert_array_almost_equal(S.shape, np.array([self.nb_rays, self.nb_samples, 3]))
+        xdim, ydim, zdim = 10, 10, 10
+        dx, dy, dz = 1, 1, 1
+        nb_rays = 10
+        rays = np.random.rand(nb_rays, 6)
+        box_top = np.array([(xdim - 1) * dx, (ydim - 1) * dy, (zdim - 1) * dz])
+        box_bottom = np.zeros(3)
+        samples = rays_to_samples(rays, 0.1, box_bottom, box_top)
+        assert len(samples) == nb_rays
 
-    def test_edge_case
+    def test_rays_to_samples(self):
+        xdim, ydim, zdim = 10, 10, 10
+        dx, dy, dz = 1, 1, 1
+        nb_rays = 1
+        rays = np.random.rand(nb_rays, 6)
+        box_top = np.array([(xdim - 1) * dx, (ydim - 1) * dy, (zdim - 1) * dz])
+        box_bottom = np.zeros(3)
+        samples = rays_to_samples(rays, 0.1, box_bottom, box_top)
+        assert len(samples) == nb_rays
 
-    def test_samples_to_icoeffs(self):
-        S = np.random.rand(self.nb_rays, self.nb_samples, 3)
-        IC = samples_to_icoeffs(S)
-        np.testing.assert_array_almost_equal(IC.shape, np.array([self.nb_rays, self.nb_samples, 8]))
-
-    def test_samples_to_neighbors(self):
-        S = np.random.rand(self.nb_rays, self.nb_samples, 3)
-        N = samples_to_nbh(S)
-        np.testing.assert_array_almost_equal(N.shape, np.array([self.nb_rays, self.nb_samples, 8]))
+    # def test_samples_to_icoeffs(self):
+    #     S = np.random.rand(self.nb_rays, self.nb_samples, 3)
+    #     IC = samples_to_icoeffs(S)
+    #     np.testing.assert_array_almost_equal(IC.shape, np.array([self.nb_rays, self.nb_samples, 8]))
+    #
+    # def test_samples_to_neighbors(self):
+    #     S = np.random.rand(self.nb_rays, self.nb_samples, 3)
+    #     N = samples_to_nbh(S)
+    #     np.testing.assert_array_almost_equal(N.shape, np.array([self.nb_rays, self.nb_samples, 8]))
 
 
 

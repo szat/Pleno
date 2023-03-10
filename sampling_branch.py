@@ -24,23 +24,24 @@ def intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max):
     tmax = np.min([tmax, np.min(tbigger, axis=1)], axis=0)
     return tmin, tmax
 
-def rays_to_samples(rays, nb_samples):
-    box_top = np.array([(xdim-1)*dx, (ydim-1)*dy, (zdim-1)*dz])
-    box_bottom = np.zeros(3)
-    samples = np.empty([len(rays), nb_samples, 3])
-    rays = np.random.rand(10, 6)
+
+def rays_to_samples(rays, spacing, box_top, box_bottom):
     rays_ori = rays[:, :3]
     rays_dir = rays[:, 3:]
+    rays_dir = rays_dir / np.expand_dims(np.linalg.norm(rays_dir, axis=1), 1)
     rays_inv = 1/rays_dir
     tmin, tmax = intersect_ray_aabb(rays_ori, rays_inv, box_bottom, box_top)
-
-
-    # do the T approach
-
-
-
-
-    return 0
+    tics = []
+    for i in range(len(tmin)):
+        tics.append(np.arange(tmin[i], tmax[i], spacing))
+    samples = []
+    for i, t in enumerate(tics):
+        ori = rays_ori[i]
+        dir = rays_dir[i]
+        ori = np.expand_dims(ori, axis=1)
+        dir = np.expand_dims(dir, axis=1)
+        samples.append((ori + t * dir).T)
+    return samples
 
 #
 # def samples_to_icoeffs(samples):
