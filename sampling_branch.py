@@ -10,72 +10,38 @@ cameras = np.random.rand(nb_cameras, 6) # position and orientation
 
 # http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
 def intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max):
+    # considers the boundary of the volume as NON intersecting, if tmax <= tmin then NO intersection
     if ray_origin.ndim == 1:
         ray_origin = np.expand_dims(ray_origin, 0)
         ray_inv_dir = np.expand_dims(ray_inv_dir, 0)
-
     tmin = np.ones(len(ray_origin)) * -np.inf
     tmax = np.ones(len(ray_origin)) * np.inf
-    # tmin = np.tile(tmin, (len(ray_origin), 1))
-    # tmax = np.array([np.inf])
-    # tmax = np.tile(tmax, (len(ray_origin), 1))
-
     t0 = (box_min - ray_origin) * ray_inv_dir
     t1 = (box_max - ray_origin) * ray_inv_dir
-
-    tsmaller = np.min([t0, t1], axis=0)
-    tbigger = np.max([t0, t1], axis=0)
-
-    tmin = np.max([tmin, np.max(tsmaller, axis=1)])
-    tmax = np.min([tmax, np.min(tbigger, axis=1)])
-
-
-    # tmax = np.min(tmax, min(tbigger[0], min(tbigger[1], tbigger[2])));
-    #
-    # for i in range(3):
-    #     t0 = (box_min[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
-    #     t1 = (box_max[i] - ray_origin[:, i]) * ray_inv_dir[:, i]
-    #
-    #     # swap
-    #     tmp = t1[ray_inv_dir[:, i] < 0.0]
-    #     t1[ray_inv_dir[:, i] < 0] = t0[ray_inv_dir[:, i] < 0]
-    #     t0[ray_inv_dir[:, i] < 0] = tmp
-    #
-    #     tmin = np.max([t0, tmin], axis=0)
-    #     tmax = np.min([t1, tmax], axis=0)
-
+    tsmaller = np.nanmin([t0, t1], axis=0)
+    tbigger = np.nanmax([t0, t1], axis=0)
+    tmin = np.max([tmin, np.max(tsmaller, axis=1)], axis=0)
+    tmax = np.min([tmax, np.min(tbigger, axis=1)], axis=0)
     return tmin, tmax
 
-    #
-    # # t1 = - ray_origin * ray_inv_dir
-    # # t2 = - ray_origin * ray_inv_dir
-    # tmin = np.max([t1, t2], axis=0)
-    # tmax = np.min([t1, t2], axis=0)
-    # tnear = np.max(tmin, axis = 1)
-    # tfar = np.min(tmax, axis = 1)
+def rays_to_samples(rays, nb_samples):
+    box_top = np.array([(xdim-1)*dx, (ydim-1)*dy, (zdim-1)*dz])
+    box_bottom = np.zeros(3)
+    samples = np.empty([len(rays), nb_samples, 3])
+    rays = np.random.rand(10, 6)
+    rays_ori = rays[:, :3]
+    rays_dir = rays[:, 3:]
+    rays_inv = 1/rays_dir
+    tmin, tmax = intersect_ray_aabb(rays_ori, rays_inv, box_bottom, box_top)
 
 
-    # for (int d = 0; d < 3; ++d) {
-    #     float t1 = (box->min[d] - ray->origin[d]) * ray->dir_inv[d];
-    #     float t2 = (box->max[d] - ray->origin[d]) * ray->dir_inv[d];
-    #
-    #     tmin = max(tmin, min(t1, t2));
-    #     tmax = min(tmax, max(t1, t2));
-    # }
+    # do the T approach
 
-    return tnear, tfar
-#
-# def rays_to_samples(rays, nb_samples):
-#     epsilon = 0.000000000000000000000001
-#     samples = np.empty([len(rays), nb_samples, 3])
-#     # do the T approach
-#     t =
-#
-#
-#
-#
-#     return 0
-#
+
+
+
+    return 0
+
 #
 # def samples_to_icoeffs(samples):
 #     return 0
