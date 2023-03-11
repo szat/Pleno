@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def trilinear_interpolation(xyz, c, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1.0):
+def trilinear_interpolation(xyz, color, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1.0):
     # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
     # Case when only 1 entry to interpolate, want shape [3, nb]
     if len(xyz.shape) == 1:
@@ -33,10 +33,10 @@ def trilinear_interpolation(xyz, c, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1.0):
     z_zeros[zd > 0] +=1
     z1 = z0 + z_zeros
 
-    c00 = c[x0, y0, z0] * tmp + c[x1, y0, z0] * xd
-    c01 = c[x0, y1, z0] * tmp + c[x1, y1, z0] * xd
-    c10 = c[x0, y0, z1] * tmp + c[x1, y0, z1] * xd
-    c11 = c[x0, y1, z1] * tmp + c[x1, y1, z1] * xd
+    c00 = color[x0, y0, z0] * tmp + color[x1, y0, z0] * xd
+    c01 = color[x0, y1, z0] * tmp + color[x1, y1, z0] * xd
+    c10 = color[x0, y0, z1] * tmp + color[x1, y0, z1] * xd
+    c11 = color[x0, y1, z1] * tmp + color[x1, y1, z1] * xd
 
     # c00 = c[x0, y0, z0] * tmp + c[x0 + 1, y0, z0] * xd
     # c01 = c[x0, y0 + 1, z0] * tmp + c[x0 + 1, y0 + 1, z0] * xd
@@ -47,11 +47,11 @@ def trilinear_interpolation(xyz, c, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1.0):
     c0 = c00 * tmp + c10 * yd
     c1 = c01 * tmp + c11 * yd
 
-    c = c0 * (1 - zd) + c1 * zd
+    color = c0 * (1 - zd) + c1 * zd
 
-    if len(c.shape) == 1:
-        c = np.expand_dims(c, axis=1)
-    return c
+    if len(color.shape) == 1:
+        color = np.expand_dims(color, axis=1)
+    return color
 
 
 def trilinear_coefficients(xyz, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1.0):

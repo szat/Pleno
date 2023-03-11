@@ -86,6 +86,27 @@ class TestTrilinearInterpolation(unittest.TestCase):
         computed_value = trilinear_interpolation(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
         np.testing.assert_array_almost_equal(expected_value, computed_value)
 
+    def test_interpolation_dot_at_corners(self):
+        # Test interpolation at the corners of the data array
+        xyz = np.array([[0.0, 0.0, 0.0],
+                        [0.0, 2.0, 0.0],
+                        [0.0, 2.0, 2.0],
+                        [0.0, 0.0, 2.0],
+                        [2.0, 0.0, 0.0],
+                        [2.0, 2.0, 0.0],
+                        [2.0, 2.0, 2.0],
+                        [2.0, 0.0, 2.0]])
+        expected_value = np.array([0,0,0,0,2,2,2,2]).reshape([8,1])
+        computed_value = trilinear_interpolation_dot(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
+    def test_interpolation_dot_random(self):
+        # Test interpolation at the corners of the data array
+        xyz = np.random.rand(10, 3)
+        expected_value = trilinear_interpolation(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        computed_value = trilinear_interpolation_dot(xyz, self.c, np.zeros(3), 2.0, 2.0, 2.0)
+        np.testing.assert_array_almost_equal(expected_value, computed_value)
+
     def test_interpolation2_inside_box(self):
         # Test interpolation within bounds of the data array
         xyz = np.array([1.0, 1.0, 1.0])
