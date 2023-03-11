@@ -24,7 +24,7 @@ class TestArchitecture(unittest.TestCase):
         samples = rays_to_samples(rays, 0.1, box_bottom, box_top)
         assert len(samples) == nb_rays
 
-    def test_rays_to_samples(self):
+    def test_rays_to_samples_only_one(self):
         xdim, ydim, zdim = 10, 10, 10
         dx, dy, dz = 1, 1, 1
         nb_rays = 1

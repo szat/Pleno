@@ -43,10 +43,15 @@ def rays_to_samples(rays, spacing, box_top, box_bottom):
         samples.append((ori + t * dir).T)
     return samples
 
-#
-# def samples_to_icoeffs(samples):
-#     return 0
-#
+
+def samples_to_interpolation_coeffs(samples, grid):
+    xdim, ydim, zdim = 10, 10, 10
+    dx, dy, dz = 1, 1, 1
+    nb_rays = 10
+
+
+    return 0
+
 #
 # def samples_to_nbh(samples):
 #     return 0
