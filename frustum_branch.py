@@ -59,7 +59,7 @@ def rays_to_frustrum(ray_origins: np.ndarray, ray_dir_vecs: np.ndarray, samples:
 
 def frustrum_to_harmonics_fixed_dir(frustum: np.ndarray, ray_dirs: np.ndarray,
                                     grid: np.ndarray, opacity: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """computes the multiplication of harmonics (evaluated at a fixed direction per ray and the model 
+    """computes the multiplication of harmonics (evaluated at a fixed direction) per ray and the model 
     coefficients of the 8 integer neighbours defined by frustum per sample.
     
     Args: 
@@ -98,8 +98,8 @@ def frustrum_to_harmonics_fixed_dir(frustum: np.ndarray, ray_dirs: np.ndarray,
 
 def frustrum_to_harmonics(frustum: np.ndarray, dir_vec_neighs: np.ndarray,
                           grid: np.ndarray, opacity: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """computes the multiplication of harmonics (evaluated at a fixed direction per ray and the model 
-    coefficients of the 8 integer neighbours defined by frustum per sample.
+    """computes the multiplication of harmonics (evaluated at the direction to the ray origin) per ray
+    and the model coefficients of the 8 integer neighbours defined by frustum per sample.
     
     Args: 
         frustum (np.ndarray): of shape (nb_rays, nb_samples, 8, 3), given by rays_to_frustrum function
