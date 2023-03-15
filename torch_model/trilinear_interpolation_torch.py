@@ -1,13 +1,9 @@
 import torch
 
-def trilinear_interpolation(xyz, c, origin=torch.zeros(3), dx=1.0, dy=1.0, dz=1.0):
+def trilinear_interpolation(vecs, c, origin=torch.zeros(3), dx=1.0, dy=1.0, dz=1.0):
     # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
     # Case when only 1 entry to interpolate, want shape [3, nb]
-    if len(xyz.size()) == 1:
-        xyz = xyz.unsqueeze(1)
-        xyz = xyz.T
-
-    xyz = xyz - origin
+    xyz = vecs - origin
     xyz = xyz / torch.tensor([dx, dy, dz]) #, dtype=float), axis=1)
 
     xyz_floor = torch.floor(xyz)
@@ -18,22 +14,14 @@ def trilinear_interpolation(xyz, c, origin=torch.zeros(3), dx=1.0, dy=1.0, dz=1.
     x0, y0, z0 = xyz_floor[:, 0], xyz_floor[:, 1], xyz_floor[:, 2]
     tmp = 1 - xd
 
-    x_zeros = torch.zeros(x0.size(), dtype=torch.long)
-    x_zeros[xd > 0] +=1
-    x1 = x0 + x_zeros
-
-    y_zeros = torch.zeros(y0.size(), dtype=torch.long)
-    y_zeros[yd > 0] +=1
-    y1 = y0 + y_zeros
-
-    z_zeros = torch.zeros(z0.size(), dtype=torch.long)
-    z_zeros[zd > 0] +=1
-    z1 = z0 + z_zeros
-
-    c00 = c[x0, y0, z0] * tmp + c[x1, y0, z0] * xd
-    c01 = c[x0, y1, z0] * tmp + c[x1, y1, z0] * xd
-    c10 = c[x0, y0, z1] * tmp + c[x1, y0, z1] * xd
-    c11 = c[x0, y1, z1] * tmp + c[x1, y1, z1] * xd
+    xd = xd.unsqueeze(1)
+    yd = yd.unsqueeze(1)
+    zd = zd.unsqueeze(1)
+    tmp = tmp.unsqueeze(1)
+    c00 = c[:, 0, :] * tmp + c[:, 1, :] * xd
+    c01 = c[:, 2, :] * tmp + c[:, 3, :] * xd
+    c10 = c[:, 4, :] * tmp + c[:, 5, :] * xd
+    c11 = c[:, 6, :] * tmp + c[:, 7, :] * xd
 
     tmp = 1 - yd
     c0 = c00 * tmp + c10 * yd
@@ -41,6 +29,4 @@ def trilinear_interpolation(xyz, c, origin=torch.zeros(3), dx=1.0, dy=1.0, dz=1.
 
     c = c0 * (1 - zd) + c1 * zd
 
-    if len(c.size()) == 1:
-        c = c.unsqueeze(1)
     return c

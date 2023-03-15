@@ -6,8 +6,6 @@ import torch
 K_CONST = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
        1.09254843, 0.31539157, 1.09254843, 0.54627422])
 
-
-# My code
 def sh_cartesian(xyz: torch.Tensor):
     K = K_CONST
     if xyz.ndim == 1:

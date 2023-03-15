@@ -3,7 +3,7 @@ import math
 import torch
 import unittest
 
-from frustum_branch_torch import *
+from frustum_branch_torch import rays_to_frustum, frustum_to_harmonics
 from spherical_harmonics_torch import sh_cartesian
 
 
@@ -17,24 +17,24 @@ class TestArchitecture(unittest.TestCase):
         self.grid = torch.rand(self.idim, self.idim, self.idim, 9)
         self.opacity = torch.rand(self.idim, self.idim, self.idim)
 
-    def test_rays_to_frustrum_shape(self):
+    def test_rays_to_frustum_shape(self):
         # shifts/scalings are just for testing and making sure that random tesing samples does not overflow grid:
         ray_origins = torch.rand(self.nb_rays, 3) * 20 + self.idim/2
         ray_dir_vecs = torch.rand(self.nb_rays, 3) + 0.5
         ray_samples = torch.rand(self.nb_rays, self.nb_samples) * 30
-        frustum, dir_vec_neighs = rays_to_frustrum(ray_origins, ray_dir_vecs, ray_samples)
+        frustum, sample_points, dir_vec_neighs = rays_to_frustum(ray_origins, ray_dir_vecs, ray_samples)
         torch.testing.assert_close(frustum.shape,
                                    torch.ones(self.nb_rays, self.nb_samples, 8, 3).shape)
         torch.testing.assert_close(dir_vec_neighs.shape,
                                    torch.ones(self.nb_rays, self.nb_samples, 8, 3).shape)
 
-    def test_frustrum_to_harmonics_shape(self):
+    def test_frustum_to_harmonics_shape(self):
         # shifts/scalings are just for testing and making sure that random tesing samples does not overflow grid:
         ray_origins = torch.rand(self.nb_rays, 3) * 20 + self.idim/2
         ray_dir_vecs = torch.rand(self.nb_rays, 3) + 0.5
         ray_samples = torch.rand(self.nb_rays, self.nb_samples) * 30
-        frustum, dir_vec_neighs = rays_to_frustrum(ray_origins, ray_dir_vecs, ray_samples)
-        neighs_harmonics, neighs_opacities = frustrum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity)
+        frustum, sample_points, dir_vec_neighs = rays_to_frustum(ray_origins, ray_dir_vecs, ray_samples)
+        neighs_harmonics, neighs_opacities = frustum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity)
         torch.testing.assert_close(neighs_harmonics.shape,
                                    torch.zeros(self.nb_rays, self.nb_samples, 8, 9).shape)
         torch.testing.assert_close(neighs_opacities.shape,
@@ -72,7 +72,7 @@ class TestArchitecture(unittest.TestCase):
                                ])
 
         assert voxels_ijk.size() == (nr_rays, nr_samples, 3)
-        frustum, dir_vec_neighs = rays_to_frustrum(ray_origins, ray_dir_vecs, ray_samples)
+        frustum, sample_points, dir_vec_neighs = rays_to_frustum(ray_origins, ray_dir_vecs, ray_samples)
         torch.testing.assert_close(frustum[:, :, 0, :], voxels_ijk)
         torch.testing.assert_close(dir_vec_neighs[:, :, 0, :], dir_vecs)
 
@@ -82,8 +82,8 @@ class TestArchitecture(unittest.TestCase):
         ray_origins = torch.Tensor([50.5, 50.5, 50.5]).reshape((nr_rays, 3))
         ray_dir_vecs = torch.Tensor([1, 0, 0]).reshape((nr_rays, 3)) # pointing to +x
         ray_samples = torch.Tensor([0]).reshape((nr_rays, nr_samples)) # sample at ray origin
-        frustum, dir_vec_neighs = rays_to_frustrum(ray_origins, ray_dir_vecs, ray_samples)
-        ret_harmonics, ret_opacities = frustrum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity)
+        frustum, sample_points, dir_vec_neighs = rays_to_frustum(ray_origins, ray_dir_vecs, ray_samples)
+        ret_harmonics, ret_opacities = frustum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity)
 
         true_opacities = torch.Tensor([self.opacity[50, 50, 50], self.opacity[51, 50, 50],
                                        self.opacity[50, 51, 50], self.opacity[51, 51, 50],
