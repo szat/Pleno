@@ -51,6 +51,7 @@ def samples_to_interpolation_coeffs(samples, dx=1.0, dy=1.0, dz=1.0):
         coefs.append(trilinear_coefficients(s, origin, dx, dy, dz))
     return coefs
 
+
 # rays = np.random.rand(nb_rays, 3) # rays * xyz (orientation)
 # samples = np.random.rand(nb_rays, nb_samples, 3) # rays * samples per ray * xyz (position)
 # interp_coefs = np.random.rand(nb_rays, nb_samples, 8) # constant at a point

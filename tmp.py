@@ -18,3 +18,5 @@ grid_density[npy_links >= 0] = np.squeeze(npy_density_data[npy_links[npy_links >
 
 path = '/home/adrian/Documents/Nerf/BlenderStuff/density'
 np.save(path, grid_density)
+
+#https://www.youtube.com/watch?v=cqLhhjxch2s
