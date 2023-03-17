@@ -131,3 +131,39 @@ cam_R.rotate(R, center=np.zeros(3))
 coord_cam_R.rotate(R, center=np.zeros(3))
 
 o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_cam, cam_R, arrow_F_R, arrow_fy_R, arrow_fx_R])
+
+# We need the set of rays,
+
+#ok, so now i feel there is an understanding for the pixel values of the camera, and how the rays are defined
+#we can create a set of rays,
+
+
+class Camera:
+    def __init__(self,
+                 origin=np.zeros(3),
+                 orientation=np.array([0, 0, 1]),
+                 dist_plane=1,
+                 length_x=0.640,
+                 length_y=0.480,
+                 pixels_x=640,
+                 pixels_y=480):
+        self.origin = origin
+        self.orientation = orientation
+        self.dist_plane = dist_plane
+        self.length_x = length_x
+        self.length_y = length_y
+        self.pixels_x = pixels_x
+        self.pixels_y = pixels_y
+
+def camera_to_rays(camera: Camera):
+    vz = np.array([0, 0, 1])
+    vx = np.array([1, 0, 0])
+    vy = np.array([0, 1, 0])
+
+    R = rotation_align(camera.orientation, vz)
+    assert np.testing.assert_allclose(np.dot(camera.orientation, np.dot(R, vz)), 1)
+
+    vz = np.dot(vz, )
+
+
+    return 0
