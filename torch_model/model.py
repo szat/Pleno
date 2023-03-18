@@ -29,7 +29,7 @@ class RadianceField(nn.Module):
         self.box_min = torch.Tensor([[0, 0, 0]])
         self.box_max = torch.Tensor([[float(idim), idim, idim]])
 
-    def forward(self, x: torch.Tensor, d: torch.Tensor):
+    def forward(self, x: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
         """
         x, d define origins and directions of rays
         """
@@ -65,15 +65,15 @@ class RadianceField(nn.Module):
         interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
         interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
 
-        # render with interp_harmonics and interp_opacities
+        # render with interp_harmonics and interp_opacities:
         cumm_opacity = torch.zeros(nb_rays, dtype=torch.float)
         ray_color = torch.zeros(nb_rays, dtype=torch.float)
         for i in range(self.nb_samples - 1):
             delta_i = samples[:, i+1] - samples[:, i]
             transmittance = torch.exp(-cumm_opacity)
             cur_opacity = delta_i * interp_opacities[:, i]
-            color_sample = torch.sigmoid(torch.sum(interp_harmonics[:, i], dim=1))
-            ray_color += transmittance * (1 - torch.exp(-cur_opacity)) * color_sample
+            sample_color = torch.sigmoid(torch.sum(interp_harmonics[:, i], dim=1))
+            ray_color += transmittance * (1 - torch.exp(-cur_opacity)) * sample_color
             cumm_opacity += cur_opacity
 
         return ray_color
