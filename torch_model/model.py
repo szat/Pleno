@@ -35,14 +35,15 @@ class RadianceField(nn.Module):
         """
 
         assert x.shape[0] == d.shape[0]
-        batch_size = x.shape[0]
+        nb_rays = x.shape[0]
 
         ray_inv_dirs = 1. / d
-        tmin, tmax = self.intersect_ray_aabb(x, ray_inv_dirs, self.box_min.expand(batch_size, 3),
-                                                              self.box_max.expand(batch_size, 3))
+        tmin, tmax = self.intersect_ray_aabb(x, ray_inv_dirs, self.box_min.expand(nb_rays, 3),
+                                                              self.box_max.expand(nb_rays, 3))
         mask = torch.Tensor(tmin < tmax)
         assert mask.any() # otherwise, empty operations/gradient
         x = x[mask]
+        nb_rays = x.shape[0]
         d = d[mask]
         tmin = tmin[mask]
         tmax = tmax[mask]
@@ -61,12 +62,12 @@ class RadianceField(nn.Module):
         interp_opacities = trilinear_interpolation(sample_points, neigh_opacities,
                                                    dx=self.delta_voxel[0], dy=self.delta_voxel[1], dz=self.delta_voxel[2])
 
-        interp_harmonics = torch.reshape(interp_harmonics, (x.shape[0], self.nb_samples, 9)) # nb_rays x nb_samples x 9
-        interp_opacities = torch.reshape(interp_opacities, (x.shape[0], self.nb_samples)) # nb_rays x nb_samples
+        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
+        interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
 
         # render with interp_harmonics and interp_opacities
-        cumm_opacity = torch.zeros(x.shape[0], dtype=torch.float)
-        ray_color = torch.zeros(x.shape[0], dtype=torch.float)
+        cumm_opacity = torch.zeros(nb_rays, dtype=torch.float)
+        ray_color = torch.zeros(nb_rays, dtype=torch.float)
         for i in range(self.nb_samples - 1):
             delta_i = samples[:, i+1] - samples[:, i]
             transmittance = torch.exp(-cumm_opacity)
