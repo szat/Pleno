@@ -60,7 +60,7 @@ def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, sampl
 
 def frustum_to_harmonics(frustum: torch.Tensor, dir_vec_neighs: torch.Tensor,
                           grid: torch.Tensor, opacity: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """computes the multiplication of harmonics (evaluated at the direction to the ray origin) per ray
+    """computes the weighted multiplication of harmonics (evaluated at the direction to the ray origin) per ray
     and the model coefficients of the 8 integer neighbours defined by frustum per sample.
     
     Args: 
