@@ -10,7 +10,7 @@ from model import RadianceField
 class TestArchitecture(unittest.TestCase):
     def setUp(self):
         self.idim = 10
-        # So the grid looks like [0.0, 1.0, ... , 100.0]^3, functions take (dx,dy,dz)=(1,1,1) by default
+        # So the grid looks like [0.0, 1.0, ... , 10.0]^3, functions take (dx,dy,dz)=(1,1,1) by default
         self.nb_rays = 7
         self.nb_samples = 11
 
@@ -24,6 +24,9 @@ class TestArchitecture(unittest.TestCase):
 
         model = RadianceField(self.idim, self.nb_samples)
         print(model(ray_origins, ray_dir_vecs))
+
+        voxels_ijk_tv = torch.Tensor([[5, 5, 5], [1, 2, 3], [2, 7, 3]])
+        print(model.total_variation(voxels_ijk_tv))
 
 
 if __name__=='__main__':
