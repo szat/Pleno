@@ -7,17 +7,39 @@ import copy
 
 # https://iquilezles.org/articles/noacos/
 def rotation_align(from_vec, to_vec):
-    v = np.cross(from_vec, to_vec)
-    c = np.dot(from_vec, to_vec)
-    if np.all(v == np.zeros(3)) and c > 0:
-        return np.eye(3)
-    if np.all(v == np.zeros(3)) and c < 0:
-        return -np.eye(3)
-    k = 1.0 / (1.0 + c)
+    assert from_vec.shape == to_vec.shape, "from_vec and to_vec need to be of the same shape"
+    if from_vec.ndim == 1:
+        v = np.cross(from_vec, to_vec)
+        # c = np.einsum('ij,ij...->i...', from_vec, to_vec)
+        c = np.dot(from_vec, to_vec)
+        if np.all(v == np.zeros(3)) and c > 0:
+            return np.eye(3)
+        if np.all(v == np.zeros(3)) and c < 0:
+            return -np.eye(3)
+        k = 1.0 / (1.0 + c)
+        return np.array([[v[0]**2 * k + c,    v[0]*v[1]*k - v[2], v[0]*v[2]*k + v[1]],
+                         [v[0]*v[1]*k + v[2], v[1]**2 * k + c,    v[1]*v[2]*k - v[0]],
+                         [v[0]*v[2]*k - v[1], v[1]*v[2]*k + v[0], v[2]**2 * k + c   ]])
+    if from_vec.ndim == 2:
+        v = np.cross(from_vec, to_vec)
+        c = np.einsum('ij,ij...->i...', from_vec, to_vec)
+        # c = np.dot(from_vec, to_vec)
 
-    return np.array([[v[0]**2 * k + c,    v[0]*v[1]*k - v[2], v[0]*v[2]*k + v[1]],
-                     [v[0]*v[1]*k + v[2], v[1]**2 * k + c,    v[1]*v[2]*k - v[0]],
-                     [v[0]*v[2]*k - v[1], v[1]*v[2]*k + v[0], v[2]**2 * k + c   ]])
+        #
+        # if np.all(v == np.zeros(3), axis=1) and c > 0:
+        #     return np.eye(3)
+        # if np.all(v == np.zeros(3)) and c < 0:
+        #     return -np.eye(3)
+        k = 1.0 / (1.0 + c)
+        out = np.array([[v[:, 0]**2 * k + c,    v[:, 0]*v[:, 1]*k - v[:, 2], v[:, 0]*v[:, 2]*k + v[:, 1]],
+                         [v[:, 0]*v[:, 1]*k + v[:, 2], v[:, 1]**2 * k + c,    v[:, 1]*v[:, 2]*k - v[:, 0]],
+                         [v[:, 0]*v[:, 2]*k - v[:, 1], v[:, 1]*v[:, 2]*k + v[:, 0], v[:, 2]**2 * k + c   ]])
+        out = np.einsum('ijk->kij', out)
+        bool_flag_identity = np.all(v == np.zeros(3), axis=1) * c > 0
+        bool_flag_reverse = np.all(v == np.zeros(3), axis=1) * c < 0
+        out[bool_flag_identity] = np.eye(3)
+        out[bool_flag_reverse] = -np.eye(3)
+        return out
 
 
 class Camera:

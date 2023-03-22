@@ -77,16 +77,66 @@ class TestRender(unittest.TestCase):
         np.testing.assert_allclose(np.dot(np.dot(R, from_vec), to_vec), 1.0)
         return True
 
-    def test_rotation_align_not_normalized(self):
+    def test_rotation_align_random_normalized_parallel(self):
+        nb = 10
+        from_vec = np.random.rand(nb, 3)
+        to_vec = np.random.rand(nb, 3)
+        from_vec = from_vec / np.expand_dims(np.linalg.norm(from_vec, axis=1), 1)
+        to_vec = to_vec / np.expand_dims(np.linalg.norm(to_vec, axis=1), 1)
+        Rs = rotation_align(from_vec, to_vec)
+        assert Rs.shape == (nb, 3, 3)
+        for i in range(nb):
+            np.testing.assert_allclose(np.dot(np.dot(Rs[i], from_vec[i]), to_vec[i]), 1.0)
         return True
 
-    def test_rotation_align_many_on_first_vec(self):
+    def test_rotation_align_opposite_normalized_parallel(self):
+        nb = 6
+        from_vec = np.empty([nb, 3])
+        to_vec = np.empty([nb, 3])
+
+        from_vec[0] = np.array([1, 0, 0])
+        to_vec[0] = np.array([-1, 0, 0])
+
+        from_vec[1] = np.array([0, 1, 0])
+        to_vec[1] = np.array([0, -1, 0])
+
+        from_vec[2] = np.array([0, 0, 1])
+        to_vec[2] = np.array([0, 0, -1])
+
+        from_vec[3] = np.array([0, 1, 1])
+        to_vec[3] = np.array([0, -1, -1])
+
+        from_vec[4] = np.array([1, 1, 1])
+        to_vec[4] = np.array([-1, -1, -1])
+
+        from_vec[5] = np.array([1, 1, 1])
+        to_vec[5] = np.array([1, 1, 1])
+
+        from_vec = from_vec / np.expand_dims(np.linalg.norm(from_vec, axis=1), 1)
+        to_vec = to_vec / np.expand_dims(np.linalg.norm(to_vec, axis=1), 1)
+
+        Rs = rotation_align(from_vec, to_vec)
+
+        assert Rs.shape == (nb, 3, 3)
+        for i in range(nb):
+            np.testing.assert_allclose(np.dot(np.dot(Rs[i], from_vec[i]), to_vec[i]), 1.0)
         return True
 
-    def test_rotation_align_many_on_second_vec(self):
-        return True
+    def test_rotation_align_perp_parallel(self):
+        nb = 2
+        from_vec = np.empty([nb, 3])
+        to_vec = np.empty([nb, 3])
 
-    def test_rotation_align_many_on_both_vec(self):
+        from_vec[0] = np.array([1, 0, 0])
+        to_vec[0] = np.array([0, 1, 0])
+
+        from_vec[1] = np.array([0, 1, 0])
+        to_vec[1] = np.array([0, 0, -1])
+        Rs = rotation_align(from_vec, to_vec)
+
+        assert Rs.shape == (nb, 3, 3)
+        for i in range(nb):
+            np.testing.assert_allclose(np.dot(np.dot(Rs[i], from_vec[i]), to_vec[i]), 1.0)
         return True
 
     def test_viz_one_camera(self):
