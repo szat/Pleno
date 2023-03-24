@@ -93,6 +93,20 @@ def get_camera_vectors(camera: Camera):
     y = y + camera.origin
     return z, x, y
 
+def get_camera_rays(camera: Camera):
+    z, x, y = get_camera_vectors(camera)
+    tics_x = np.expand_dims(np.linspace(-1, 1, camera.pixels_x), 1)
+    tics_y = np.expand_dims(np.linspace(-1, 1, camera.pixels_y), 1)
+
+    xx = tics_x * x
+    yy = tics_y * y
+    xx = np.expand_dims(xx, 0)
+    yy = np.expand_dims(yy, 1)
+    rays = xx + yy
+    zz = np.expand_dims(z, [0, 1])
+    rays = rays + zz
+    rays = rays / np.expand_dims(np.linalg.norm(rays, axis=2), 2)
+    return rays
 
 # do it first in open3d to get the matrices right
 knot_mesh = o3d.data.KnotMesh()
@@ -120,24 +134,14 @@ cam_x = get_arrow(np.zeros(3)+z, x+z, [1, 0, 0]) #red
 cam_y = get_arrow(np.zeros(3)+z, y+z, [0, 1, 0]) #green
 o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_w, cam_z, cam_x, cam_y])
 
-nx, ny = (4, 3)
-tics_x = np.expand_dims(np.linspace(-1, 1, nx), 1)
-tics_y = np.expand_dims(np.linspace(-1, 1, ny), 1)
-
-xx = tics_x * x
-yy = tics_y * y
-
-xx = np.expand_dims(xx, 0)
-yy = np.expand_dims(yy, 1)
-
-rays = xx + yy
-zz = np.expand_dims(z, [0, 1])
-rays = rays + zz
+camera.pixels_x = 5
+camera.pixels_y = 7
+rays = get_camera_rays(camera)
 
 r_list = []
 for i in range(rays.shape[0]):
     for j in range(rays.shape[1]):
-        arrow = get_arrow(np.zeros(3), rays[i, j, :])  # green
+        arrow = get_arrow(np.zeros(3), 10*rays[i, j, :])  # green
         r_list.append(arrow)
 
 scene = o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_w, cam_z, cam_x, cam_y] + r_list)
