@@ -28,11 +28,16 @@ class RadianceField(torch.nn.Module):
         self.idim = idim
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
-        self.grid = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1, 9)))
-        self.opacity = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1)))
+        # self.grid = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1, 9)))
+        # self.opacity = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1)))
+        self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9)))
+        self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim)))
+        # self.grid = torch.nn.Parameter(torch.FloatTensor(idim, idim, idim, 9)).to('cuda')
+        # self.opacity = torch.nn.Parameter(torch.FloatTensor(idim, idim, idim)).to('cuda')
         self.inf = torch.tensor(float(idim)*idim*idim)
         self.box_min = torch.Tensor([[0, 0, 0]])
-        self.box_max = torch.Tensor([[float(idim), idim, idim]])
+        # self.box_max = torch.Tensor([[float(idim), idim, idim]])
+        self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]])
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 

@@ -3,7 +3,6 @@ import os
 import open3d as o3d
 import copy
 
-
 # https://iquilezles.org/articles/noacos/
 def rotation_align(from_vec, to_vec):
     assert from_vec.shape == to_vec.shape, "from_vec and to_vec need to be of the same shape"
@@ -52,13 +51,13 @@ class Camera:
         self.pixels_y = pixels_y
 
 
-def get_arrow(start_point, end_point, color=[0.3, 0.3, 0.3]):
+def get_arrow(start_point, end_point, color=[0.3, 0.3, 0.3], thickness=1):
     vec = end_point - start_point
     norm = np.linalg.norm(vec)
     cone_height = norm * 0.2
     cylinder_height = norm * 0.8
-    cone_radius = 0.2
-    cylinder_radius = 0.1
+    cone_radius = 0.2 * thickness
+    cylinder_radius = 0.1 * thickness
     arrow = o3d.geometry.TriangleMesh.create_arrow(cone_radius=cone_radius,
                                                      cone_height=cone_height,
                                                      cylinder_radius=cylinder_radius,
@@ -88,9 +87,9 @@ def get_camera_vectors(camera: Camera):
     x = x * camera.length_x
     y = y * camera.length_y
 
-    z = z + camera.origin
-    x = x + camera.origin
-    y = y + camera.origin
+    # z = z + camera.origin
+    # x = x + camera.origin
+    # y = y + camera.origin
     return z, x, y
 
 def get_camera_rays(camera: Camera):
@@ -147,8 +146,84 @@ for i in range(rays.shape[0]):
 scene = o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_w, cam_z, cam_x, cam_y] + r_list)
 
 
+## for the rendering
+
+bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound=np.zeros(3), max_bound=np.array([512, 512, 512]))
+bbox.color = (1, 0, 0)
+
+coord_w = o3d.geometry.TriangleMesh.create_coordinate_frame()
+coord_w.scale(50, center=coord_w.get_center())
+
+bbox_center = bbox.get_center()
+coord_bbox = o3d.geometry.TriangleMesh.create_coordinate_frame()
+coord_bbox.scale(50, center=coord_bbox.get_center())
+coord_bbox = coord_bbox.translate(bbox_center)
+
+# o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox])
+
+origin=np.array([-30, -30, -30])
+orientation=np.array([256, 256, 256])
+orientation = orientation / np.linalg.norm(orientation)
+camera = Camera(origin=origin, orientation=orientation, dist_plane=20, length_x=15, length_y=15)
+
+z, x, y = get_camera_vectors(camera)
+# cam_z = get_arrow(origin, z+origin, [0, 0, 1], thickness=10) #blue
+# cam_x = get_arrow(origin+z, origin+x+z, [1, 0, 0], thickness=10) #red
+# cam_y = get_arrow(origin+z, origin+y+z, [0, 1, 0], thickness=10) #green
+# cam_z.scale(10, center=np.zeros(3))
+# cam_x.scale(10, center=np.zeros(3))
+# cam_y.scale(10, center=np.zeros(3))
+# o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y])
 
 
+camera.pixels_x = 50
+camera.pixels_y = 50
+rays = get_camera_rays(camera)
+
+# r_list = []
+# for i in range(0, rays.shape[0], 100):
+#     for j in range(0, rays.shape[1], 100):
+#         arrow = get_arrow(origin, origin+20*rays[i, j, :])  # green
+#         r_list.append(arrow)
+#
+# o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y]+r_list)
+
+
+import numpy as np
+import torch
+torch.cuda.is_available()
+torch.cuda.device_count()
+import sys
+sys.path.append('/home/adrian/Code/Pleno/torch_model')
+sys.path.append('/home/adrian/Code/Pleno/torch_model/')
+import torch_model.model as model
+
+rf = model.RadianceField(idim=512, nb_samples=512)
+
+data = np.load('/home/adrian/Documents/Nerf/256_to_512_fasttv/chair/ckpt.npz', allow_pickle=True)
+
+# Access data arrays using keys
+npy_radius = data['radius']
+npy_center = data['center']
+npy_links = data['links']
+npy_density_data = data['density_data']
+npy_sh_data = data['sh_data']
+npy_basis_type = data['basis_type']
+
+# density_matrix = np.empty([512, 512, 512])
+# sh_matrix = np.empty([512, 512, 512, 9])
+density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
+sh_matrix = torch.from_numpy(npy_sh_data[:,:9][npy_links.clip(min=0)])
+
+rf.grid = torch.nn.Parameter(sh_matrix)
+rf.opacity = torch.nn.Parameter(density_matrix)
+
+# load the scene now
+# for a camera, get the rays
+
+ori = np.tile(origin, (50*50, 1))
+rrr = rays.reshape((50*50, 3))
+res = rf.forward(torch.from_numpy(ori), torch.from_numpy(rrr))
 
 
 
