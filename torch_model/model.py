@@ -119,16 +119,16 @@ class RadianceField(torch.nn.Module):
         delta_root_harm = torch.sqrt(delta_sqr_x_harm + delta_sqr_y_harm + delta_sqr_z_harm)
 
         delta_x_opac = self.opacity[tuple(index_delta_x.long())] - \
-                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())] 
+                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())]
 
         delta_y_opac = self.opacity[tuple(index_delta_y.long())] - \
-                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())] 
+                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())]
 
         delta_z_opac = self.opacity[tuple(index_delta_z.long())] - \
-                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())] 
+                       self.opacity[tuple(voxels_ijk_tv.permute((1, 0)).long())]
 
-        delta_root_opac = torch.sqrt(delta_x_opac * delta_x_opac + delta_y_opac * delta_y_opac + \
-                                     delta_z_opac * delta_z_opac)
+        delta_root_opac = torch.sqrt((delta_x_opac * delta_x_opac + delta_y_opac * delta_y_opac + \
+                                     delta_z_opac * delta_z_opac) / (256 / self.idim))
 
         return torch.sum(delta_root_harm) / voxels_ijk_tv.shape[0], \
                torch.sum(delta_root_opac) / voxels_ijk_tv.shape[0]
