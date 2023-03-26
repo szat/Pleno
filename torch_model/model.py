@@ -28,15 +28,10 @@ class RadianceField(torch.nn.Module):
         self.idim = idim
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
-        # self.grid = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1, 9)))
-        # self.opacity = torch.nn.Parameter(torch.rand((idim + 1, idim + 1, idim + 1)))
         self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9)))
         self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim)))
-        # self.grid = torch.nn.Parameter(torch.FloatTensor(idim, idim, idim, 9)).to('cuda')
-        # self.opacity = torch.nn.Parameter(torch.FloatTensor(idim, idim, idim)).to('cuda')
         self.inf = torch.tensor(float(idim)*idim*idim)
         self.box_min = torch.Tensor([[0, 0, 0]])
-        # self.box_max = torch.Tensor([[float(idim), idim, idim]])
         self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]])
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
@@ -53,7 +48,10 @@ class RadianceField(torch.nn.Module):
         tmin, tmax = self.intersect_ray_aabb(x, ray_inv_dirs, self.box_min.expand(nb_rays, 3),
                                                               self.box_max.expand(nb_rays, 3))
         mask = torch.Tensor(tmin < tmax)
-        assert mask.any() # otherwise, empty operations/gradient
+        indices = torch.nonzero(mask)
+        if not mask.any(): # otherwise, empty operations/gradient
+            return torch.zeros(x.shape[0], dtype=x.dtype)
+
         x = x[mask]
         nb_rays = x.shape[0]
         d = d[mask]
@@ -88,6 +86,9 @@ class RadianceField(torch.nn.Module):
             rays_color += transmittances * (1 - torch.exp(-cur_opacities)) * samples_color
             cumm_opacities += cur_opacities
 
+        # retrieve original rays tensor shape:
+        indices = torch.squeeze(indices)
+        rays_color = torch.zeros(mask.shape[0], dtype=rays_color.dtype).scatter_(0, indices, rays_color)
         return rays_color
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:
