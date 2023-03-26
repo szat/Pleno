@@ -117,8 +117,8 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-path_to_weigths = "/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/chair/ckpt.npz"
-img_size = 80
+path_to_weigths = "/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/lego/ckpt.npz"
+img_size = 800
 batch_size = 1024
 nb_samples = 512
 
@@ -138,8 +138,8 @@ density_matrix[density_matrix < 0] = 0 # clip neg. density values
 rf.opacity.data = density_matrix
 
 # load the scene now: for a camera, get the rays
-origin = np.array([-1, -1, -1])
-orientation = np.array([1, 1, 1])
+origin = np.array([513, 513, 513])
+orientation = np.array([-1, -1, -1])
 orientation = orientation / np.linalg.norm(orientation)
 camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
                 pixels_x=img_size, pixels_y=img_size)
@@ -169,5 +169,6 @@ with torch.no_grad():
 img_rgb = torch.permute(torch.stack(img_rgb), (1, 2, 0))
 img = img_rgb.detach().numpy()
 img = (img * 255).astype(np.uint8)
-cv2.imwrite(f"render_rgb_{img_size}x{img_size}.png", img)
+img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+cv2.imwrite(f"render2_lego_rgb_{img_size}x{img_size}.png", img)
 
