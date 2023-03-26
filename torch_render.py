@@ -118,7 +118,7 @@ def get_camera_rays(camera: Camera):
 ######################## Rendering with pytorch model ####################################
 
 path_to_weigths = "/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/chair/ckpt.npz"
-img_size = 800
+img_size = 80
 batch_size = 1024
 nb_samples = 512
 
@@ -135,7 +135,7 @@ npy_basis_type = data['basis_type']
 
 density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
 density_matrix[density_matrix < 0] = 0 # clip neg. density values
-rf.opacity = torch.nn.Parameter(density_matrix)
+rf.opacity.data = density_matrix
 
 # load the scene now: for a camera, get the rays
 origin = np.array([-1, -1, -1])
