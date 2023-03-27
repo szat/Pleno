@@ -21,18 +21,26 @@ class RadianceField(torch.nn.Module):
                  w_tv_harms: float = 1,
                  w_tv_opacity: float = 1):
         super().__init__()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(self.device)
+        # relative 8 ijk-neighbours:
+        self.delta_ijk = torch.tensor([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
+                                       (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
+                                       dtype=torch.float).reshape((8, 3)).to(self.device)
+        self.K_sh = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
+                                 1.09254843, 0.31539157, 1.09254843, 0.54627422]).to(self.device)
         self.distr_ray_sampling = distr_ray_sampling
         self.nb_samples = nb_samples
         assert nb_samples > 1
-        self.delta_voxel = delta_voxel
+        self.delta_voxel = delta_voxel.to(self.device)
         self.idim = idim
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
         self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9)))
         self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim)))
         self.inf = torch.tensor(float(idim)*idim*idim)
-        self.box_min = torch.Tensor([[0, 0, 0]])
-        self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]])
+        self.box_min = torch.Tensor([[0, 0, 0]]).to(self.device)
+        self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]]).to(self.device)
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 
@@ -43,6 +51,9 @@ class RadianceField(torch.nn.Module):
 
         assert x.shape[0] == d.shape[0]
         nb_rays = x.shape[0]
+
+        x = x.to(self.device)
+        d = d.to(self.device)
 
         ray_inv_dirs = 1. / d
         tmin, tmax = self.intersect_ray_aabb(x, ray_inv_dirs, self.box_min.expand(nb_rays, 3),
@@ -55,40 +66,37 @@ class RadianceField(torch.nn.Module):
         x = x[mask]
         nb_rays = x.shape[0]
         d = d[mask]
+
         tmin = tmin[mask]
         tmax = tmax[mask]
         sample_obj = self.distr_ray_sampling(tmin, tmax) # could use custom distr according to dendity e.g.
         samples, _ = torch.sort(sample_obj.sample(sample_shape=[self.nb_samples]).T) # nb_rays x nb_samples
-        frustum, sample_points, dir_vec_neighs = rays_to_frustum(x, d, samples, self.delta_voxel)
-        neigh_harmonics, neigh_opacities = frustum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity)
+        samples = samples.to(self.device)
+        frustum, sample_points, dir_vec_neighs = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
+        neigh_harmonics, neigh_opacities = frustum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity, self.K_sh)
 
         sample_points = torch.flatten(sample_points, 0, 1)
         neigh_harmonics = torch.flatten(neigh_harmonics, 0, 1)
         neigh_opacities = torch.flatten(neigh_opacities, 0, 1)
         neigh_opacities = neigh_opacities.unsqueeze(2)
 
-        interp_harmonics = trilinear_interpolation(sample_points, neigh_harmonics,
-                                                   dx=self.delta_voxel[0], dy=self.delta_voxel[1], dz=self.delta_voxel[2])
-        interp_opacities = trilinear_interpolation(sample_points, neigh_opacities,
-                                                   dx=self.delta_voxel[0], dy=self.delta_voxel[1], dz=self.delta_voxel[2])
+        interp_harmonics = trilinear_interpolation(sample_points, neigh_harmonics, self.box_min, self.delta_voxel)
+        interp_opacities = trilinear_interpolation(sample_points, neigh_opacities, self.box_min, self.delta_voxel)
 
         interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
         interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
 
         # render with interp_harmonics and interp_opacities:
-        cumm_opacities = torch.zeros(nb_rays, dtype=torch.float)
-        rays_color = torch.zeros(nb_rays, dtype=torch.float)
-        for i in range(self.nb_samples - 1):
-            deltas_i = samples[:, i+1] - samples[:, i]
-            transmittances = torch.exp(-cumm_opacities)
-            cur_opacities = deltas_i * interp_opacities[:, i]
-            samples_color = torch.sigmoid(torch.sum(interp_harmonics[:, i], dim=1))
-            rays_color += transmittances * (1 - torch.exp(-cur_opacities)) * samples_color
-            cumm_opacities += cur_opacities
+        deltas = samples[:, 1:] - samples[:, :-1]
+        deltas_times_sigmas = deltas * interp_opacities[:, :-1]
+        cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
+        cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
+        samples_color = torch.sigmoid(torch.sum(interp_harmonics, dim=2))
+        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1], dim=1)
 
         # retrieve original rays tensor shape:
         indices = torch.squeeze(indices)
-        rays_color = torch.zeros(mask.shape[0], dtype=rays_color.dtype).scatter_(0, indices, rays_color)
+        rays_color = torch.zeros(mask.shape[0], dtype=rays_color.dtype, device=self.device).scatter_(0, indices, rays_color)
         return rays_color
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:
@@ -164,8 +172,8 @@ class RadianceField(torch.nn.Module):
         source: http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
         """
 
-        tmin = torch.ones(len(ray_origins)) * (-self.inf)
-        tmax = torch.ones(len(ray_origins)) * self.inf
+        tmin = torch.ones(len(ray_origins), device=self.device) * (-self.inf)
+        tmax = torch.ones(len(ray_origins), device=self.device) * self.inf
         t0 = (box_mins - ray_origins) * ray_inv_dirs
         t1 = (box_maxs - ray_origins) * ray_inv_dirs
         tsmaller = torch.min(t0, t1)

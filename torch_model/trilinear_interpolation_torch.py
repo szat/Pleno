@@ -1,10 +1,10 @@
 import torch
 
-def trilinear_interpolation(vecs, c, origin=torch.zeros(3), dx=1.0, dy=1.0, dz=1.0):
+def trilinear_interpolation(vecs, c, origin, delta_voxel):
     # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
     # Case when only 1 entry to interpolate, want shape [3, nb]
     xyz = vecs - origin
-    xyz = xyz / torch.tensor([dx, dy, dz]) #, dtype=float), axis=1)
+    xyz = xyz / delta_voxel
 
     xyz_floor = torch.floor(xyz)
     diff = xyz - xyz_floor

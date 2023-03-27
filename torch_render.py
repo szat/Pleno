@@ -117,10 +117,11 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-path_to_weigths = "/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/chair/ckpt.npz"
+model_name = "chair"
+path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
 img_size = 800
-batch_size = 1024
-nb_samples = 512
+batch_size = 1024*4
+nb_samples = 256
 
 rf = model.RadianceField(idim=512, nb_samples=nb_samples)
 data = np.load(path_to_weigths, allow_pickle=True)
@@ -138,8 +139,8 @@ density_matrix[density_matrix < 0] = 0 # clip neg. density values
 rf.opacity = torch.nn.Parameter(density_matrix)
 
 # load the scene now: for a camera, get the rays
-origin = np.array([-1, -1, -1])
-orientation = np.array([1, 1, 1])
+origin = np.array([513, 513, 513])
+orientation = np.array([-1, -1, -1])
 orientation = orientation / np.linalg.norm(orientation)
 camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
                 pixels_x=img_size, pixels_y=img_size)
@@ -153,15 +154,16 @@ print(rays_origins.shape)
 img_rgb = []
 with torch.no_grad():
     for channel in range(3):
-        color_batched = []
         print("channel:", channel + 1)
         sh_matrix = torch.from_numpy(npy_sh_data[:,channel*9:(channel + 1)*9][npy_links.clip(min=0)])
         rf.grid.data = sh_matrix
+        rf.to(rf.device)
+        color_batched = []
         for batch_start in range(0, rays_dirs.shape[0], batch_size):
             print("batching:", batch_start)
             origins_batched = rays_origins[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
             dirs_batched = rays_dirs[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
-            color_batched.append(rf(origins_batched, dirs_batched))
+            color_batched.append(rf(origins_batched, dirs_batched).cpu())
 
         color_rays = torch.cat(color_batched)
         img_rgb.append(torch.reshape(color_rays, (img_size, img_size)))
@@ -169,5 +171,5 @@ with torch.no_grad():
 img_rgb = torch.permute(torch.stack(img_rgb), (1, 2, 0))
 img = img_rgb.detach().numpy()
 img = (img * 255).astype(np.uint8)
-cv2.imwrite(f"render_rgb_{img_size}x{img_size}.png", img)
-
+img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+cv2.imwrite(f"render_{model_name}_rgb_{img_size}x{img_size}.png", img)

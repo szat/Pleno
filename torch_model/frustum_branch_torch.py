@@ -3,12 +3,9 @@ import torch
 
 from spherical_harmonics_torch import sh_cartesian
 
-# relative 8 ijk-neighbours:
-delta_ijk = torch.tensor([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
-                          (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
-                         dtype=torch.float).reshape((8, 3))
 
 def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, samples: torch.Tensor,
+                    delta_ijk: torch.Tensor,
                     delta_voxel: torch.Tensor = torch.tensor([1, 1, 1], dtype=torch.float)
                     ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the bottom-left-closest voxel (integer coordinates) of for the given rays and samples.
@@ -59,7 +56,8 @@ def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, sampl
 
 
 def frustum_to_harmonics(frustum: torch.Tensor, dir_vec_neighs: torch.Tensor,
-                          grid: torch.Tensor, opacity: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                         grid: torch.Tensor, opacity: torch.Tensor,
+                         K_sh: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """computes the weighted multiplication of harmonics (evaluated at the direction to the ray origin) per ray
     and the model coefficients of the 8 integer neighbours defined by frustum per sample.
     
@@ -87,7 +85,7 @@ def frustum_to_harmonics(frustum: torch.Tensor, dir_vec_neighs: torch.Tensor,
     neigh_densities = neigh_densities.permute((2, 1, 0))  # nb_rays x nb_samples x 8
 
     # evaluations of 8 neighbours harmonics are done in their own direction:
-    sh = sh_cartesian(dir_vec_neighs.reshape((-1, 3)))  # (nb_rays * nb_samples * 8) x 9
+    sh = sh_cartesian(dir_vec_neighs.reshape((-1, 3)), K_sh)  # (nb_rays * nb_samples * 8) x 9
     sh = sh.reshape((dir_vec_neighs.shape[0], dir_vec_neighs.shape[1], 8, 9))  # nb_rays x nb_samples x 8 x 9
     
     # weigh harmonics with model grid coefficients at all 8 neighbours
