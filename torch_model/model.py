@@ -8,6 +8,7 @@ import torch.nn
 import torch.optim
 
 from frustum_branch_torch import frustum_to_harmonics, rays_to_frustum
+from spherical_harmonics_torch import sh_cartesian
 from trilinear_interpolation_torch import trilinear_interpolation
 
 
@@ -72,20 +73,24 @@ class RadianceField(torch.nn.Module):
         sample_obj = self.distr_ray_sampling(tmin, tmax) # could use custom distr according to dendity e.g.
         samples, _ = torch.sort(sample_obj.sample(sample_shape=[self.nb_samples]).T) # nb_rays x nb_samples
         samples = samples.to(self.device)
-        frustum, sample_points, dir_vec_neighs = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
-        neigh_harmonics, neigh_opacities = frustum_to_harmonics(frustum, dir_vec_neighs, self.grid, self.opacity, self.K_sh)
+        frustum, sample_points  = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
+        neigh_harmonics_coeffs, neigh_opacities = frustum_to_harmonics(frustum, self.grid, self.opacity)
+
+        # evaluations harmonics are done at each ray direction:
+        sh = sh_cartesian(d, self.K_sh) # nb_rays x 9
 
         sample_points = torch.flatten(sample_points, 0, 1)
-        neigh_harmonics = torch.flatten(neigh_harmonics, 0, 1)
+        neigh_harmonics_coeffs = torch.flatten(neigh_harmonics_coeffs, 0, 1)
         neigh_opacities = torch.flatten(neigh_opacities, 0, 1)
         neigh_opacities = neigh_opacities.unsqueeze(2)
 
-        interp_harmonics = trilinear_interpolation(sample_points, neigh_harmonics, self.box_min, self.delta_voxel)
+        interp_sh_coeffs = trilinear_interpolation(sample_points, neigh_harmonics_coeffs, self.box_min, self.delta_voxel)
         interp_opacities = trilinear_interpolation(sample_points, neigh_opacities, self.box_min, self.delta_voxel)
 
-        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
+        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
         interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
-
+        interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
+        
         # render with interp_harmonics and interp_opacities:
         deltas = samples[:, 1:] - samples[:, :-1]
         deltas_times_sigmas = deltas * interp_opacities[:, :-1]

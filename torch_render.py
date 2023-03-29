@@ -117,11 +117,11 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-model_name = "chair"
+model_name = "lego"
 path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
 img_size = 800
-batch_size = 1024*4
-nb_samples = 256
+batch_size = 1024
+nb_samples = 1024
 
 rf = model.RadianceField(idim=512, nb_samples=nb_samples)
 data = np.load(path_to_weigths, allow_pickle=True)
@@ -172,4 +172,4 @@ img_rgb = torch.permute(torch.stack(img_rgb), (1, 2, 0))
 img = img_rgb.detach().numpy()
 img = (img * 255).astype(np.uint8)
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-cv2.imwrite(f"render_{model_name}_rgb_{img_size}x{img_size}.png", img)
+cv2.imwrite(f"render_{model_name}_rgb_{img_size}x{img_size}_s{nb_samples}.png", img)
