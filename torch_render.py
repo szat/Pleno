@@ -122,24 +122,28 @@ path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name
 img_size = 800
 batch_size = 1024
 nb_samples = 1024
+nb_sh_channels = 3
 
-rf = model.RadianceField(idim=512, nb_samples=nb_samples)
 data = np.load(path_to_weigths, allow_pickle=True)
 
 # Access data arrays using keys
 npy_radius = data['radius']
 npy_center = data['center']
 npy_links = data['links']
+npy_links = npy_links[::2, ::2, ::2] # reduce resol to half
 npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
 density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
 density_matrix[density_matrix < 0] = 0 # clip neg. density values
-rf.opacity = torch.nn.Parameter(density_matrix)
+sh_matrix = torch.from_numpy(npy_sh_data[:, 0:9*nb_sh_channels][npy_links.clip(min=0)])
+
+rf = model.RadianceField(idim=256, grid=sh_matrix, opacity=density_matrix, 
+                         nb_sh_channels=nb_sh_channels, nb_samples=nb_samples)
 
 # load the scene now: for a camera, get the rays
-origin = np.array([513, 513, 513])
+origin = np.array([257, 257, 257])
 orientation = np.array([-1, -1, -1])
 orientation = orientation / np.linalg.norm(orientation)
 camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
@@ -150,26 +154,20 @@ rays_origins = torch.from_numpy(np.tile(origin, (img_size*img_size, 1)))
 rays_dirs = torch.from_numpy(rays_cam.reshape((img_size*img_size, 3)))
 
 print("rendering!")
-print(rays_origins.shape)
-img_rgb = []
+print("rays tensor:", rays_origins.shape)
 with torch.no_grad():
-    for channel in range(3):
-        print("channel:", channel + 1)
-        sh_matrix = torch.from_numpy(npy_sh_data[:,channel*9:(channel + 1)*9][npy_links.clip(min=0)])
-        rf.grid.data = sh_matrix
-        rf.to(rf.device)
-        color_batched = []
-        for batch_start in range(0, rays_dirs.shape[0], batch_size):
-            print("batching:", batch_start)
-            origins_batched = rays_origins[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
-            dirs_batched = rays_dirs[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
-            color_batched.append(rf(origins_batched, dirs_batched).cpu())
+    color_batched = []
+    for batch_start in range(0, rays_dirs.shape[0], batch_size):
+        origins_batched = rays_origins[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
+        dirs_batched = rays_dirs[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
+        color_batched.append(rf(origins_batched, dirs_batched).cpu())
 
-        color_rays = torch.cat(color_batched)
-        img_rgb.append(torch.reshape(color_rays, (img_size, img_size)))
+    color_rays = torch.reshape(torch.cat(color_batched), (img_size, img_size, nb_sh_channels))
 
-img_rgb = torch.permute(torch.stack(img_rgb), (1, 2, 0))
-img = img_rgb.detach().numpy()
+img = color_rays.detach().numpy()
+if nb_sh_channels == 2:
+    img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 img = (img * 255).astype(np.uint8)
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-cv2.imwrite(f"render_{model_name}_rgb_{img_size}x{img_size}_s{nb_samples}.png", img)
+if nb_sh_channels == 3:
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+cv2.imwrite(f"render_{model_name}_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)

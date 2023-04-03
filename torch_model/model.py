@@ -16,7 +16,10 @@ class RadianceField(torch.nn.Module):
 
     def __init__(self,
                  idim: int,
+                 nb_sh_channels: int, 
                  nb_samples: int,
+                 opacity: torch.Tensor = None,
+                 grid: torch.Tensor = None,
                  distr_ray_sampling: Distribution=Uniform,
                  delta_voxel: torch.Tensor=torch.tensor([1, 1, 1], dtype=torch.float),
                  w_tv_harms: float = 1,
@@ -35,10 +38,17 @@ class RadianceField(torch.nn.Module):
         assert nb_samples > 1
         self.delta_voxel = delta_voxel.to(self.device)
         self.idim = idim
+        self.nb_sh_channels = nb_sh_channels
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
-        self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9)))
-        self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim)))
+        if grid is None:
+            self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9*nb_sh_channels), device=self.device))
+        else:
+            self.grid = torch.nn.Parameter(grid.to(self.device))
+        if opacity is None:
+            self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim), device=self.device))
+        else:
+            self.opacity = torch.nn.Parameter(opacity.to(self.device))
         self.inf = torch.tensor(float(idim)*idim*idim)
         self.box_min = torch.Tensor([[0, 0, 0]]).to(self.device)
         self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]]).to(self.device)
@@ -61,8 +71,8 @@ class RadianceField(torch.nn.Module):
                                                               self.box_max.expand(nb_rays, 3))
         mask = torch.Tensor(tmin < tmax)
         indices = torch.nonzero(mask)
-        if not mask.any(): # otherwise, empty operations/gradient
-            return torch.zeros(x.shape[0], dtype=x.dtype)
+        #if not mask.any(): # otherwise, empty operations/gradient
+        #    return torch.zeros(x.shape[0], dtype=x.dtype)
 
         x = x[mask]
         nb_rays = x.shape[0]
@@ -72,36 +82,42 @@ class RadianceField(torch.nn.Module):
         tmax = tmax[mask]
         sample_obj = self.distr_ray_sampling(tmin, tmax) # could use custom distr according to dendity e.g.
         samples, _ = torch.sort(sample_obj.sample(sample_shape=[self.nb_samples]).T) # nb_rays x nb_samples
-        samples = samples.to(self.device)
+        samples = samples.to(self.device) # TODO: optimize using just torch.rand?
         frustum, sample_points  = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
         neigh_harmonics_coeffs, neigh_opacities = frustum_to_harmonics(frustum, self.grid, self.opacity)
 
         # evaluations harmonics are done at each ray direction:
-        sh = sh_cartesian(d, self.K_sh) # nb_rays x 9
+        sh = sh_cartesian(d, self.K_sh).repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
 
         sample_points = torch.flatten(sample_points, 0, 1)
-        neigh_harmonics_coeffs = torch.flatten(neigh_harmonics_coeffs, 0, 1)
+        neigh_harmonics_coeffs = torch.flatten(neigh_harmonics_coeffs, 0, 1) # nb_rays*nb_samples x 8 x nb_channels*nb_sh
         neigh_opacities = torch.flatten(neigh_opacities, 0, 1)
         neigh_opacities = neigh_opacities.unsqueeze(2)
 
         interp_sh_coeffs = trilinear_interpolation(sample_points, neigh_harmonics_coeffs, self.box_min, self.delta_voxel)
         interp_opacities = trilinear_interpolation(sample_points, neigh_opacities, self.box_min, self.delta_voxel)
 
-        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9)) # nb_rays x nb_samples x 9
+        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9*self.nb_sh_channels)) # nb_rays x nb_samples x nb_channels*num_sh
         interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
         interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
+        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, self.nb_sh_channels, 9))
         
         # render with interp_harmonics and interp_opacities:
         deltas = samples[:, 1:] - samples[:, :-1]
         deltas_times_sigmas = deltas * interp_opacities[:, :-1]
         cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
         cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
-        samples_color = torch.sigmoid(torch.sum(interp_harmonics, dim=2))
-        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1], dim=1)
+        samples_color = torch.sigmoid(torch.sum(interp_harmonics, dim=3))
+        cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
+        deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
+        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1, :],
+                               dim=1)
 
         # retrieve original rays tensor shape:
-        indices = torch.squeeze(indices)
-        rays_color = torch.zeros(mask.shape[0], dtype=rays_color.dtype, device=self.device).scatter_(0, indices, rays_color)
+        indices = indices.expand(indices.shape[0], 3)
+        rays_color = torch.zeros((mask.shape[0], self.nb_sh_channels),
+                                 dtype=rays_color.dtype,
+                                 device=self.device).scatter_(0, indices, rays_color)
         return rays_color
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:

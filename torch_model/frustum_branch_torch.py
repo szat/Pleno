@@ -32,7 +32,6 @@ def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, sampl
     # normalize ray_dir_vecs
     r = torch.linalg.norm(ray_dir_vecs, dim=1)
     r = torch.unsqueeze(r, 1)
-    assert torch.all(r)
     ray_dir_vecs = ray_dir_vecs / r
 
     samples = torch.unsqueeze(samples, dim=2)
@@ -70,8 +69,9 @@ def frustum_to_harmonics(frustum: torch.Tensor, grid: torch.Tensor, opacity: tor
     
     
     # retrieve model coefficients of harmonics at 8 neigbour indexes:
+    # TODO: check if the evaluation can be optimised, without 'tuple'
     neigh_harmonics_coeff = grid[tuple(torch.permute(frustum, (3, 2, 1, 0)).long())]
-    # resulting array of shape nb_rays x nb_samples x 8 x 9:
+    # resulting array of shape nb_rays x nb_samples x 8 x nb_sh:
     neigh_harmonics_coeff = neigh_harmonics_coeff.permute((2, 1, 0, 3))
 
     # retrieve model density at 8 neigbour indexes:
