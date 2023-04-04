@@ -40,7 +40,7 @@ def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, sampl
     sample_points = ray_origins + samples * ray_dir_vecs
 
     # get ijk coordinates according to (dx, dy, dz):
-    frustum = torch.div(sample_points, delta_voxel, rounding_mode='floor').to(torch.int)
+    frustum = torch.div(sample_points, delta_voxel, rounding_mode='floor').to(torch.int64)
 
     # compute integer index coords of 8 neighbours:
     frustum = torch.unsqueeze(frustum, dim=2)
@@ -58,24 +58,28 @@ def frustum_to_harmonics(frustum: torch.Tensor, grid: torch.Tensor, opacity: tor
     
     Args: 
         frustum (torch.Tensor): of shape (nb_rays, nb_samples, 8, 3), given by rays_to_frustrum function
-        grid (torch.Tensor): of shape (xdim, ydim zdim, 9) giving model 9 harmonic coeficients
+        grid (torch.Tensor): of shape (xdim, ydim, zdim, nb_sh*nb_channels) giving model harmonic coeficients
         opacity (torch.Tensor): of shape (xdim, ydim, zdim) giving model opacity
         
     Returns: Tuple[torch.Tensor, torch.tesnor] resp. neigh_harmonics and neigh_densities. First array is of shape
-    (nb_rays, nb_samples, 8, 9) and gives the evaluated 9 harmonics weigthed by model coefficients
+    (nb_rays, nb_samples, 8, nb_sh*nb_channels) and gives the evaluated harmonics weigthed by model coefficients
     per 8 neighbours of each sample of each ray. Second array is of shape (nb_rays, nb_samples, 8) and
     gives the model opacities at all 8 neighbours of each sample of each ray.
     """
     
-    
     # retrieve model coefficients of harmonics at 8 neigbour indexes:
-    # TODO: check if the evaluation can be optimised, without 'tuple'
-    neigh_harmonics_coeff = grid[tuple(torch.permute(frustum, (3, 2, 1, 0)).long())]
+    nb_rays, nb_samples = frustum.shape[0: 2]
+    frustum = torch.flatten(frustum, start_dim=0, end_dim=2)
+    xdim, ydim, zdim = grid.shape[0: 3]
+    grid = torch.flatten(grid, start_dim=0, end_dim=2)
+    indices = ydim*zdim*frustum[:, 0] + zdim*frustum[:, 1] + frustum[:, 2]
+    indices_sh = indices.unsqueeze(1).expand(indices.shape[0], grid.shape[1])
+    neigh_harmonics_coeff = torch.gather(grid, dim=0, index=indices_sh)
     # resulting array of shape nb_rays x nb_samples x 8 x nb_sh:
-    neigh_harmonics_coeff = neigh_harmonics_coeff.permute((2, 1, 0, 3))
+    neigh_harmonics_coeff = torch.reshape(neigh_harmonics_coeff, (nb_rays, nb_samples, 8, grid.shape[1]))
 
     # retrieve model density at 8 neigbour indexes:
-    neigh_densities = opacity[tuple(frustum.permute((3, 2, 1, 0)).long())]
-    neigh_densities = neigh_densities.permute((2, 1, 0))  # nb_rays x nb_samples x 8
+    neigh_densities = torch.gather(torch.flatten(opacity), dim=0, index=indices)
+    neigh_densities = torch.reshape(neigh_densities, (nb_rays, nb_samples, 8))
 
     return neigh_harmonics_coeff, neigh_densities

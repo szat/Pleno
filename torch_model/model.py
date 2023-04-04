@@ -30,7 +30,7 @@ class RadianceField(torch.nn.Module):
         # relative 8 ijk-neighbours:
         self.delta_ijk = torch.tensor([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
                                        (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
-                                       dtype=torch.float).reshape((8, 3)).to(self.device)
+                                       dtype=torch.int64).reshape((8, 3)).to(self.device)
         self.K_sh = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
                                  1.09254843, 0.31539157, 1.09254843, 0.54627422]).to(self.device)
         self.distr_ray_sampling = distr_ray_sampling
