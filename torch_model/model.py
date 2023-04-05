@@ -20,7 +20,6 @@ class RadianceField(torch.nn.Module):
                  nb_samples: int,
                  opacity: torch.Tensor = None,
                  grid: torch.Tensor = None,
-                 distr_ray_sampling: Distribution=Uniform,
                  delta_voxel: torch.Tensor=torch.tensor([1, 1, 1], dtype=torch.float),
                  w_tv_harms: float = 1,
                  w_tv_opacity: float = 1):
@@ -33,7 +32,6 @@ class RadianceField(torch.nn.Module):
                                        dtype=torch.int64).reshape((8, 3)).to(self.device)
         self.K_sh = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
                                  1.09254843, 0.31539157, 1.09254843, 0.54627422]).to(self.device)
-        self.distr_ray_sampling = distr_ray_sampling
         self.nb_samples = nb_samples
         assert nb_samples > 1
         self.delta_voxel = delta_voxel.to(self.device)
@@ -72,7 +70,7 @@ class RadianceField(torch.nn.Module):
         mask = torch.Tensor(tmin < tmax)
         indices = torch.nonzero(mask)
         #if not mask.any(): # otherwise, empty operations/gradient
-        #    return torch.zeros(x.shape[0], dtype=x.dtype)
+        #    return torch.zeros(x.shape[0], self.nb_sh_channels, dtype=x.dtype)
 
         x = x[mask]
         nb_rays = x.shape[0]
@@ -80,9 +78,11 @@ class RadianceField(torch.nn.Module):
 
         tmin = tmin[mask]
         tmax = tmax[mask]
-        sample_obj = self.distr_ray_sampling(tmin, tmax) # could use custom distr according to dendity e.g.
-        samples, _ = torch.sort(sample_obj.sample(sample_shape=[self.nb_samples]).T) # nb_rays x nb_samples
-        samples = samples.to(self.device) # TODO: optimize using just torch.rand?
+        samples = torch.rand((nb_rays, self.nb_samples), dtype=x.dtype, device=self.device)
+        tmin = tmin.reshape((-1, 1))
+        tmax = tmax.reshape((-1, 1))
+        samples = (tmax - tmin) * samples + tmin
+        samples, _ = torch.sort(samples, dim=1)
         frustum, sample_points  = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
         neigh_harmonics_coeffs, neigh_opacities = frustum_to_harmonics(frustum, self.grid, self.opacity)
 

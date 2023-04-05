@@ -119,9 +119,10 @@ def get_camera_rays(camera: Camera):
 
 model_name = "lego"
 path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+#path_to_weigths = f"/home/diego/data/nerf/arta_ckpt.npz"
 img_size = 800
-batch_size = 1024
-nb_samples = 1024
+batch_size = 4*1024
+nb_samples = 512
 nb_sh_channels = 3
 
 data = np.load(path_to_weigths, allow_pickle=True)
@@ -150,10 +151,9 @@ camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1
                 pixels_x=img_size, pixels_y=img_size)
 
 rays_cam = get_camera_rays(camera)
-rays_origins = torch.from_numpy(np.tile(origin, (img_size*img_size, 1)))
-rays_dirs = torch.from_numpy(rays_cam.reshape((img_size*img_size, 3)))
+rays_origins = torch.from_numpy(np.tile(origin, (img_size*img_size, 1))).to(torch.float64)
+rays_dirs = torch.from_numpy(rays_cam.reshape((img_size*img_size, 3))).to(torch.float64)
 
-print("rendering!")
 print("rays tensor:", rays_origins.shape)
 with torch.no_grad():
     color_batched = []
