@@ -107,7 +107,7 @@ class RadianceField(torch.nn.Module):
         deltas_times_sigmas = deltas * interp_opacities[:, :-1]
         cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
         cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
-        samples_color = torch.sigmoid(torch.sum(interp_harmonics, dim=3))
+        samples_color = torch.clamp_min(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0)
         cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
         deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
         rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1, :],

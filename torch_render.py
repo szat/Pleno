@@ -121,7 +121,7 @@ model_name = "lego"
 path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
 img_size = 800
 batch_size = 1024
-nb_samples = 512
+nb_samples = 1024
 nb_sh_channels = 3
 
 data = np.load(path_to_weigths, allow_pickle=True)
