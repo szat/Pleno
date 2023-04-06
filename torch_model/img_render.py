@@ -1,15 +1,15 @@
 import copy
 import os
 import sys
-sys.path.append('./torch_model/')
+sys.path.append('.')
 
 import cv2
 import numpy as np
 import open3d as o3d
 import torch
 
-import torch_model.model as model
-
+import model
+from sampling_branch import intersect_ray_aabb 
 
 # https://iquilezles.org/articles/noacos/
 def rotation_align(from_vec, to_vec):
@@ -144,27 +144,33 @@ rf = model.RadianceField(idim=256, grid=sh_matrix, opacity=density_matrix,
                          nb_sh_channels=nb_sh_channels, nb_samples=nb_samples)
 
 # load the scene now: for a camera, get the rays
-origin = np.array([257, 257, 257])
+origin = np.array([257., 257., 257.])
 orientation = np.array([-1, -1, -1])
 orientation = orientation / np.linalg.norm(orientation)
 camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
                 pixels_x=img_size, pixels_y=img_size)
 
 rays_cam = get_camera_rays(camera)
-rays_origins = torch.from_numpy(np.tile(origin, (img_size*img_size, 1))).to(torch.float64)
-rays_dirs = torch.from_numpy(rays_cam.reshape((img_size*img_size, 3))).to(torch.float64)
+rays_origins = np.tile(origin, (img_size*img_size, 1))
+rays_dirs = rays_cam.reshape((img_size*img_size, 3))
 
-print("rays tensor:", rays_origins.shape)
-with torch.no_grad():
-    color_batched = []
-    for batch_start in range(0, rays_dirs.shape[0], batch_size):
-        origins_batched = rays_origins[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
-        dirs_batched = rays_dirs[batch_start:min(batch_start + batch_size, rays_dirs.shape[0])]
-        color_batched.append(rf(origins_batched, dirs_batched).cpu())
 
-    color_rays = torch.reshape(torch.cat(color_batched), (img_size, img_size, nb_sh_channels))
+box_min = np.zeros(rays_origins.shape)
+box_max = np.ones(rays_origins.shape)*255
+ray_inv_dirs = 1. / rays_dirs
+tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
+mask = tmin < tmax
+valid_rays_origins = torch.from_numpy(rays_origins[mask])
+valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
+valid_tmin = torch.from_numpy(tmin[mask])
+valid_tmax = torch.from_numpy(tmax[mask])
 
-img = color_rays.detach().numpy()
+print("shape of rays to render:", valid_rays_origins.shape)
+rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
+complete_colors = np.zeros((rays_origins.shape[0], 3))
+complete_colors[mask] = rendered_rays
+img = np.reshape(complete_colors, (img_size, img_size, nb_sh_channels))
+
 if nb_sh_channels == 2:
     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 img = (img * 255).astype(np.uint8)

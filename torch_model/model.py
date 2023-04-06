@@ -53,31 +53,13 @@ class RadianceField(torch.nn.Module):
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 
-    def forward(self, x: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, d: torch.Tensor, tmin: torch.Tensor, tmax: torch.Tensor) -> torch.Tensor:
         """
         x, d define origins and directions of rays
         """
 
-        assert x.shape[0] == d.shape[0]
         nb_rays = x.shape[0]
 
-        x = x.to(self.device)
-        d = d.to(self.device)
-
-        ray_inv_dirs = 1. / d
-        tmin, tmax = self.intersect_ray_aabb(x, ray_inv_dirs, self.box_min.expand(nb_rays, 3),
-                                                              self.box_max.expand(nb_rays, 3))
-        mask = torch.Tensor(tmin < tmax)
-        indices = torch.nonzero(mask)
-        #if not mask.any(): # otherwise, empty operations/gradient
-        #    return torch.zeros(x.shape[0], self.nb_sh_channels, dtype=x.dtype)
-
-        x = x[mask]
-        nb_rays = x.shape[0]
-        d = d[mask]
-
-        tmin = tmin[mask]
-        tmax = tmax[mask]
         samples = torch.rand((nb_rays, self.nb_samples), dtype=x.dtype, device=self.device)
         tmin = tmin.reshape((-1, 1))
         tmax = tmax.reshape((-1, 1))
@@ -96,8 +78,9 @@ class RadianceField(torch.nn.Module):
 
         interp_sh_coeffs = trilinear_interpolation(sample_points, neigh_harmonics_coeffs, self.box_min, self.delta_voxel)
         interp_opacities = trilinear_interpolation(sample_points, neigh_opacities, self.box_min, self.delta_voxel)
-
-        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9*self.nb_sh_channels)) # nb_rays x nb_samples x nb_channels*num_sh
+        
+        # nb_rays x nb_samples x nb_channels*num_sh
+        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9*self.nb_sh_channels)) 
         interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
         interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
         interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, self.nb_sh_channels, 9))
@@ -110,15 +93,33 @@ class RadianceField(torch.nn.Module):
         samples_color = torch.clamp_min(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0)
         cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
         deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
-        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1, :],
+        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * 
+                               (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1, :],
                                dim=1)
-
-        # retrieve original rays tensor shape:
-        indices = indices.expand(indices.shape[0], 3)
-        rays_color = torch.zeros((mask.shape[0], self.nb_sh_channels),
-                                 dtype=rays_color.dtype,
-                                 device=self.device).scatter_(0, indices, rays_color)
         return rays_color
+
+    def render_rays(self, ray_origins: torch.Tensor, ray_dirs: torch.Tensor,
+                    tmin: torch.Tensor, tmax: torch.Tensor,
+                    batch_size: int) -> torch.Tensor:
+
+        ray_origins = ray_origins.to(self.device)
+        ray_dirs = ray_dirs.to(self.device)
+        color_batched = []
+        with torch.no_grad():
+            for batch_start in range(0, ray_dirs.shape[0], batch_size):
+                batch_end = min(batch_start + batch_size, ray_dirs.shape[0])
+                origins_batched = ray_origins[batch_start:batch_end]
+                origins_batched = origins_batched.to(self.device)
+                dirs_batched = ray_dirs[batch_start:batch_end]
+                dirs_batched = dirs_batched.to(self.device)
+                tmin_batched = tmin[batch_start:batch_end]
+                tmin_batched = tmin_batched.to(self.device)
+                tmax_batched = tmax[batch_start:batch_end]
+                tmax_batched = tmax_batched.to(self.device)
+                color_batched.append(self(origins_batched, dirs_batched,
+                                          tmin_batched, tmax_batched).cpu())
+
+        return torch.cat(color_batched)
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:
 
@@ -182,26 +183,3 @@ class RadianceField(torch.nn.Module):
         self.optimizer.zero_grad() # reset grad
         loss.backward() # back propagate
         self.optimizer.step() # update weights
-
-    def intersect_ray_aabb(self,
-                           ray_origins: torch.Tensor,
-                           ray_inv_dirs: torch.Tensor,
-                           box_mins: torch.Tensor,
-                           box_maxs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        considers the boundary of the volume as NON intersecting, if tmax <= tmin then NO intersection
-        source: http://psgraphics.blogspot.com/2016/02/new-simple-ray-box-test-from-andrew.html
-        """
-
-        tmin = torch.ones(len(ray_origins), device=self.device) * (-self.inf)
-        tmax = torch.ones(len(ray_origins), device=self.device) * self.inf
-        t0 = (box_mins - ray_origins) * ray_inv_dirs
-        t1 = (box_maxs - ray_origins) * ray_inv_dirs
-        tsmaller = torch.min(t0, t1)
-        tbigger = torch.max(t0, t1)
-        tsmaller_max, _ = torch.max(tsmaller, dim=1)
-        tbigger_min, _ = torch.min(tbigger, dim=1)
-        tmin, _ = torch.max(torch.stack([tmin, tsmaller_max]), dim=0)
-        tmax, _ = torch.min(torch.stack([tmax, tbigger_min]), dim=0)
-        return tmin, tmax
-
