@@ -5,7 +5,8 @@ import copy
 
 import numpy as np
 import open3d as o3d
-data = np.load('/home/adrian/Documents/Nerf/256_to_512_fasttv/chair/ckpt.npz', allow_pickle=True)
+# data = np.load('/home/adrian/Documents/Nerf/256_to_512_fasttv/chair/ckpt.npz', allow_pickle=True)
+data = np.load('/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz', allow_pickle=True)
 
 def rotation_align(from_vec, to_vec):
     assert from_vec.shape == to_vec.shape, "from_vec and to_vec need to be of the same shape"
@@ -55,19 +56,6 @@ def get_arrow(start_point, end_point, color=[0.3, 0.3, 0.3], thickness=1):
     arrow.paint_uniform_color(color)
     return arrow
 
-
-# Access data arrays using keys
-npy_radius = data['radius']
-npy_center = data['center']
-npy_links = data['links']
-# npy_density_data2 = data['density_data']
-npy_density_data = data['density_data'].astype(dtype=np.float16)
-npy_sh_data = data['sh_data'].astype(dtype=np.float16)
-npy_basis_type = data['basis_type']
-
-density_matrix = np.squeeze(npy_density_data[npy_links.clip(min=0)])
-sh_matrix = np.squeeze(npy_sh_data[npy_links.clip(min=0)])
-sh_matrix_r = sh_matrix[:,:,:,:9]
 
 # Create the x, y, and z coordinates using meshgrid
 x, y, z = np.meshgrid(np.arange(512), 0, 0, indexing='ij')
@@ -142,19 +130,95 @@ pcd.points = o3d.utility.Vector3dVector(coords)
 o3d.visualization.draw_geometries([pcd])
 
 # initial points for rays
-x, y, z = np.meshgrid(-50, np.arange(512), np.arange(512), indexing='ij')
-rcoords = np.stack([x, y, z], axis=-1)
-rcoords = rcoords.reshape([-1, 3])
+x, y, z = np.meshgrid(-50, np.arange(510)+0.45, np.arange(510)+0.45, indexing='ij')
+ray_origins = np.stack([x, y, z], axis=-1)
+ray_origins = ray_origins.reshape([-1, 3])
 
-ori = np.array([1, 0, 0])
-# ori = np.tile(ori, (len(rcoords), 1))
+ray_orientations = np.array([1, 0, 0])
+ray_orientations = np.tile(ray_orientations, (len(ray_origins), 1))
 
 r_list = []
-for i in range(0, rcoords.shape[0], 987):
-    arrow = get_arrow(rcoords[i,:], rcoords[i,:] + 10 * ori, thickness=3)  # green
+for i in range(0, ray_origins.shape[0], 987):
+    arrow = get_arrow(ray_origins[i, :], ray_origins[i, :] + 10 * ray_orientations[i,:], thickness=3)  # green
     r_list.append(arrow)
 
 o3d.visualization.draw_geometries([pcd]+r_list)
+
+
+
+import numpy as np
+import open3d as o3d
+# data = np.load('/home/adrian/Documents/Nerf/256_to_512_fasttv/chair/ckpt.npz', allow_pickle=True)
+data = np.load('/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz', allow_pickle=True)
+
+# Access data arrays using keys
+npy_radius = data['radius']
+npy_center = data['center']
+npy_links = data['links']
+# npy_density_data2 = data['density_data']
+npy_density_data = data['density_data'].astype(dtype=np.float16)
+npy_sh_data = data['sh_data'].astype(dtype=np.float16)
+npy_basis_type = data['basis_type']
+
+density_matrix = np.squeeze(npy_density_data[npy_links.clip(min=0)])
+sh_matrix = np.squeeze(npy_sh_data[npy_links.clip(min=0)])
+sh_matrix = sh_matrix[:,:,:,[0, 9, 19]]
+
+n = 256
+coords = np.indices((n, n, n)).reshape(3, -1).T
+
+# Create a numpy array of colors
+opacities = density_matrix.flatten().reshape(-1, 1)
+
+mask_pos = np.squeeze(opacities >= 0.22)
+# mask_neg = np.squeeze(opacities < 0)
+
+coords_pos = coords[mask_pos,:]
+# coords_neg = coords[mask_neg,:]
+
+sh_matrix = sh_matrix.flatten().reshape(3,-1).T
+sh_matrix_pos = sh_matrix[mask_pos, :]
+
+#evaluate the spherical harmonics
+coef = 0.5*np.sqrt(1/np.pi)
+sh_matrix_pos = sh_matrix_pos*coef
+sh_matrix_pos = sh_matrix_pos - np.min(sh_matrix_pos)
+sh_matrix_pos = sh_matrix_pos/np.max(sh_matrix_pos)
+# sh_matrix_pos = sh_matrix_pos.astype(dtype=float)
+#
+# opacities_pos = opacities[mask_pos,:]
+# tmp = np.exp(-opacities_pos)
+# tmp = 1 - tmp
+#
+# coords_sub = coords_pos[:, :]
+# colors_sub = tmp[:, :].astype(dtype=float)
+# colors_sub = np.hstack([colors_sub, colors_sub, colors_sub])
+# colors_sub = np.ones_like(colors_sub)
+
+# Create an Open3D point cloud
+pcd = o3d.geometry.PointCloud()
+pcd.points = o3d.utility.Vector3dVector(coords_pos)
+pcd.colors = o3d.utility.Vector3dVector(sh_matrix_pos)
+# pcd.compute_vertex_normals()
+o3d.visualization.draw_geometries([pcd])
+
+
+#now do for color
+
+
+# get samples for each ray
+from sampling_branch import *
+rays = np.hstack([ray_origins, ray_orientations])
+samples_list = rays_to_samples(rays[0:10, :], 0.37, np.ones(3)*512, np.zeros(3))
+samples = np.stack(samples_list).astype(dtype=np.float16)
+
+# get trilinear interpolation for each ray
+coeffs_list = samples_to_interpolation_coeffs(samples_list)
+coeffs = np.stack(coeffs_list).astype(dtype=np.float16)
+
+
+
+
 
 
 
@@ -253,32 +317,7 @@ o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_
 # load the scene now
 # for a camera, get the rays
 
-ori = np.tile(origin, (50*50, 1))
+ray_orientations = np.tile(origin, (50 * 50, 1))
 rrr = rays.reshape((50*50, 3))
-res = rf.forward(torch.from_numpy(ori), torch.from_numpy(rrr))
-
-
-
-
-
-# F = 500
-# width = 640
-# height = 480
-# px = 1
-# py = 1
-# fx = F/px
-# fy = F/py
-# cx = width/2
-# cy = height/2
-# skew = 0
-# intrinsic = np.array([[F/px, skew, cx],[0, F/py, cy], [0, 0, 1]])
-# # intrinsic = np.array([[1, skew, cx],[0, 1, cy], [0, 0, 1]])
-# cam = o3d.geometry.LineSet.create_camera_visualization(width, height, intrinsic, np.eye(4), scale=10.0)
-# o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_w, cam_z, cam_x, cam_y, cam])
-
-# vec = coord_obj.get_center() - cam.get_center()
-# vec = vec/np.linalg.norm(vec)
-# R = rotation_align(np.array([0, 0, 1]), vec)
-# cam.rotate(R, center=coord_w.get_center())
-# o3d.visualization.draw_geometries([box, mesh, coord_obj, coord_w, cam_z, cam_x, cam_y, cam])
+res = rf.forward(torch.from_numpy(ray_orientations), torch.from_numpy(rrr))
 
