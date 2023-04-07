@@ -161,45 +161,48 @@ coord_bbox = coord_bbox.translate(bbox_center)
 
 # o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox])
 
-origin=np.array([-30, -30, -30])
-orientation=np.array([256, 256, 256])
+origin=np.array([256-512, 256, 256])
+orientation=np.array([256, 256, 256]) - origin
 orientation = orientation / np.linalg.norm(orientation)
-camera = Camera(origin=origin, orientation=orientation, dist_plane=20, length_x=15, length_y=15)
+camera = Camera(origin=origin, orientation=orientation, dist_plane=20, length_x=5, length_y=5)
 
 z, x, y = get_camera_vectors(camera)
-# cam_z = get_arrow(origin, z+origin, [0, 0, 1], thickness=10) #blue
-# cam_x = get_arrow(origin+z, origin+x+z, [1, 0, 0], thickness=10) #red
-# cam_y = get_arrow(origin+z, origin+y+z, [0, 1, 0], thickness=10) #green
-# cam_z.scale(10, center=np.zeros(3))
-# cam_x.scale(10, center=np.zeros(3))
-# cam_y.scale(10, center=np.zeros(3))
-# o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y])
+cam_z = get_arrow(origin, z+origin, [0, 0, 1], thickness=10) #blue
+cam_x = get_arrow(origin+z, origin+x+z, [1, 0, 0], thickness=10) #red
+cam_y = get_arrow(origin+z, origin+y+z, [0, 1, 0], thickness=10) #green
+# cam_z.scale(2, center=origin)
+# cam_x.scale(2, center=origin+z)
+# cam_y.scale(2, center=origin+z)
+o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y])
 
 
 camera.pixels_x = 50
 camera.pixels_y = 50
 rays = get_camera_rays(camera)
 
-# r_list = []
-# for i in range(0, rays.shape[0], 100):
-#     for j in range(0, rays.shape[1], 100):
-#         arrow = get_arrow(origin, origin+20*rays[i, j, :])  # green
-#         r_list.append(arrow)
-#
-# o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y]+r_list)
+r_list = []
+for i in range(0, rays.shape[0], 5):
+    for j in range(0, rays.shape[1], 5):
+        arrow = get_arrow(origin, origin+800*rays[i, j, :])  # green
+        # arrow.scale(100, center=origin)
+        r_list.append(arrow)
 
+o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y]+r_list)
+
+#
+# import numpy as np
+# import torch
+# torch.cuda.is_available()
+# torch.cuda.device_count()
+# import sys
+# sys.path.append('/home/adrian/Code/Pleno/torch_model')
+# sys.path.append('/home/adrian/Code/Pleno/torch_model/')
+# import torch_model.model as model
+#
+# rf = model.RadianceField(idim=512, nb_samples=512)
 
 import numpy as np
-import torch
-torch.cuda.is_available()
-torch.cuda.device_count()
-import sys
-sys.path.append('/home/adrian/Code/Pleno/torch_model')
-sys.path.append('/home/adrian/Code/Pleno/torch_model/')
-import torch_model.model as model
-
-rf = model.RadianceField(idim=512, nb_samples=512)
-
+import open3d as o3d
 data = np.load('/home/adrian/Documents/Nerf/256_to_512_fasttv/chair/ckpt.npz', allow_pickle=True)
 
 # Access data arrays using keys
@@ -210,13 +213,72 @@ npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
+npy_density_data = npy_density_data - np.min(npy_density_data)
+npy_density_data = npy_density_data / np.max(npy_density_data)
+
+density_matrix = np.squeeze(npy_density_data[npy_links.clip(min=0)])
+n = 512
+M = density_matrix
+# M = np.random.rand(n, n, n)
+
+# Flatten the numpy array and create a numpy array of coordinates
+coords = np.indices((n, n, n)).reshape(3, -1).T
+
+# Create a numpy array of colors
+colors = M.flatten().reshape(-1, 1)
+
+threshold = 0.41
+valid_points_mask = M.flatten() >= threshold
+coords = coords[valid_points_mask]
+colors = colors[valid_points_mask]
+colors2 = np.hstack([colors, colors, colors])
+
+coords = coords[::10, :]
+colors2 = colors2[::10, :]
+
+# Create an Open3D point cloud
+pcd = o3d.geometry.PointCloud()
+pcd.points = o3d.utility.Vector3dVector(coords)
+pcd.colors = o3d.utility.Vector3dVector(colors2)
+
+o3d.visualization.draw_geometries([pcd])
+
+pcd = o3d.geometry.PointCloud()
+# pcd.points = o3d.utility.Vector3dVector(points)
+
+import matplotlib.pyplot as plt
+plt.hist(npy_density_data)
+plt.savefig("mygraph.png")
+plt.close()
+
+# use pointcloud instead
+
+voxel = o3d.geometry.TriangleMesh.create_box(5, 5, 5)
+voxel.compute_vertex_normals()
+
+b_list = []
+for i in range(0, 512, 4):
+    for j in range(0, 512, 4):
+        for k in range(0, 512, 4):
+            opacity = density_matrix[i, j, k]
+            new_voxel = copy.deepcopy(voxel)
+            new_voxel.translate([i, j, k])
+            voxel.paint_uniform_color([opacity, 0, opacity])
+            b_list.append(new_voxel)
+
+
+
+
+
+o3d.visualization.draw_geometries([bbox, coord_w, coord_bbox, cam_z, cam_x, cam_y]+r_list+b_list)
+
+
 # density_matrix = np.empty([512, 512, 512])
 # sh_matrix = np.empty([512, 512, 512, 9])
-density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
-sh_matrix = torch.from_numpy(npy_sh_data[:,:9][npy_links.clip(min=0)])
-
-rf.grid = torch.nn.Parameter(sh_matrix)
-rf.opacity = torch.nn.Parameter(density_matrix)
+# density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
+# sh_matrix = torch.from_numpy(npy_sh_data[:,:9][npy_links.clip(min=0)])
+# rf.grid = torch.nn.Parameter(sh_matrix)
+# rf.opacity = torch.nn.Parameter(density_matrix)
 
 # load the scene now
 # for a camera, get the rays
