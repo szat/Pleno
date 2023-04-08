@@ -3,12 +3,14 @@ import os
 import sys
 sys.path.append('.')
 
-import cv2
+
 import numpy as np
 import open3d as o3d
 import torch
 
 import model
+# from torch_model import *
+# from torch_model import model
 from sampling_branch import intersect_ray_aabb 
 
 # https://iquilezles.org/articles/noacos/
@@ -117,8 +119,10 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-model_name = "lego"
-path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+# model_name = "drums"
+path = '/home/adrian/Code/svox2/opt/ckpt/exp2/'
+# path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+path_to_weigths = f"{path}ckpt.npz"
 #path_to_weigths = f"/home/diego/data/nerf/arta_ckpt.npz"
 img_size = 800
 batch_size = 4*1024
@@ -131,7 +135,7 @@ data = np.load(path_to_weigths, allow_pickle=True)
 npy_radius = data['radius']
 npy_center = data['center']
 npy_links = data['links']
-npy_links = npy_links[::2, ::2, ::2] # reduce resol to half
+# npy_links = npy_links[::2, ::2, ::2] # reduce resol to half
 npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
@@ -170,10 +174,13 @@ rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, 
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = rendered_rays
 img = np.reshape(complete_colors, (img_size, img_size, nb_sh_channels))
+img = np.array(img)
+
+import cv2
 
 if nb_sh_channels == 2:
     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 img = (img * 255).astype(np.uint8)
 if nb_sh_channels == 3:
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-cv2.imwrite(f"render_{model_name}_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)
+cv2.imwrite(f"render_ex_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)

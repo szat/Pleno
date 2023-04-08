@@ -33,6 +33,12 @@ def trilinear_interpolation(xyz, color, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1
     z_zeros[zd > 0] +=1
     z1 = z0 + z_zeros
 
+    tmp = np.expand_dims(tmp, 1)
+    xd = np.expand_dims(xd, 1)
+    yd = np.expand_dims(yd, 1)
+    zd = np.expand_dims(zd, 1)
+
+
     c00 = color[x0, y0, z0] * tmp + color[x1, y0, z0] * xd
     c01 = color[x0, y1, z0] * tmp + color[x1, y1, z0] * xd
     c10 = color[x0, y0, z1] * tmp + color[x1, y0, z1] * xd
