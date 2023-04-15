@@ -26,8 +26,6 @@ def rays_to_frustum(ray_origins: torch.Tensor, ray_dir_vecs: torch.Tensor, sampl
     """
 
     n_rays = ray_origins.shape[0]
-    assert n_rays == ray_dir_vecs.shape[0]
-    assert n_rays == samples.shape[0]
 
     # normalize ray_dir_vecs
     r = torch.linalg.norm(ray_dir_vecs, dim=1)
