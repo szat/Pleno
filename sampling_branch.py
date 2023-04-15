@@ -31,6 +31,10 @@ def rays_to_samples(rays, spacing, box_top, box_bottom):
     rays_dir = rays_dir / np.expand_dims(np.linalg.norm(rays_dir, axis=1), 1)
     rays_inv = 1/rays_dir
     tmin, tmax = intersect_ray_aabb(rays_ori, rays_inv, box_bottom, box_top)
+    mask = tmin < tmax
+    rays = rays[mask]
+    tmin = tmin[mask]
+    tmax = tmax[mask]
     tics = []
     for i in range(len(tmin)):
         tics.append(np.arange(tmin[i], tmax[i], spacing))
@@ -41,7 +45,7 @@ def rays_to_samples(rays, spacing, box_top, box_bottom):
         ori = np.expand_dims(ori, axis=1)
         dir = np.expand_dims(dir, axis=1)
         samples.append((ori + t * dir).T)
-    return samples
+    return samples, rays
 
 
 def samples_to_interpolation_coeffs(samples, dx=1.0, dy=1.0, dz=1.0):

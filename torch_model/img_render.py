@@ -117,9 +117,9 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-model_name = "lego"
+model_name = "drums"
 path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
-#path_to_weigths = f"/home/diego/data/nerf/arta_ckpt.npz"
+#path = '/home/adrian/Code/svox2/opt/ckpt/exp2/'
 img_size = 800
 batch_size = 1024*4
 nb_samples = 512
@@ -194,4 +194,4 @@ if nb_sh_channels == 2:
     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 elif nb_sh_channels == 3:
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-cv2.imwrite(f"render_{model_name}_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)
+cv2.imwrite(f"render_ex_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)
