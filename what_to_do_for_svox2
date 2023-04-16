@@ -1,0 +1,22 @@
+i was able to make svox2 run in the debugger by adding
+
+arg1 = "/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz"
+arg2 = "/home/adrian/Downloads/nerf_data/nerf_synthetic/nerf_synthetic/chair/"
+# parser.add_argument('ckpt', type=str)
+# parser.add_argument('data_dir', type=str, default=arg2)
+
+argv = ["", arg1, arg2]
+args = parser.parse_args(argv[1:])
+
+Then you have to set the device to "cpu"
+
+"_volume_render_gradcheck_lerp"
+
+is where you end up, also had to change this:
+
+            l = pos.to(torch.long)
+            l.clamp_min_(0)
+            gsz_long = gsz.type(torch.LongTensor)
+            l[:, 0] = torch.clamp_max(l[:, 0], gsz_long[0] - 2)
+
+There was a float to long conversion error

@@ -133,9 +133,9 @@ npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
-opacity = npy_density_data[npy_links.clip(min=0)]
-# opacity[opacity < 0] = 0.0
-opacity = np.expand_dims(opacity, 3)
+# opacity = npy_density_data[npy_links.clip(min=0)]
+# # opacity[opacity < 0] = 0.0
+# opacity = np.expand_dims(opacity, 3)
 # grid = npy_sh_data[:, :9][npy_links.clip(min=0)]
 
 
@@ -152,8 +152,15 @@ mask = npy_links >= 0
 grid2[mask] = npy_sh_data[npy_links[mask]]
 np.testing.assert_allclose(grid, grid2)
 #not same
-grid = np.zeros_like(grid)
+grid = np.zeros([256, 256, 256, 27])
 grid[mask] = npy_sh_data[npy_links[mask]]
+
+opacity = npy_density_data[npy_links.clip(min=0)]
+opacity = np.zeros([256, 256, 256, 1])
+opacity[mask] = npy_density_data[npy_links[mask]]
+# opacity[opacity < 0] = 0.0
+# opacity = np.expand_dims(opacity, 3)
+
 
 origin = np.array([257., 257., 257.])
 orientation = np.array([-1, -1, -1])
@@ -161,14 +168,16 @@ orientation = orientation / np.linalg.norm(orientation)
 camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
                 pixels_x=img_size, pixels_y=img_size)
 
+
+
 rays_cam = get_camera_rays(camera)
 rays_ori = np.tile(origin, (img_size*img_size, 1))
 rays_dir = rays_cam.reshape((img_size*img_size, 3))
 
+
 spacing = 0.5
 box_top = np.ones(3)*256
 box_bottom = np.zeros(3)
-
 
 # from svox.py line 1494
 gsz = 256
@@ -211,20 +220,20 @@ for i in range(len(tmin_)):
 
 
 
-delta_ijk = np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
-                                       (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
-                                       dtype=np.int64).reshape((8, 3))
+# delta_ijk = np.array([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
+#                                        (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
+#                                        dtype=np.int64).reshape((8, 3))
+#
+# K_sh = np.array([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
+#                                  1.09254843, 0.31539157, 1.09254843, 0.54627422])
+#
+# delta_voxel = np.array([1, 1, 1], dtype=float)
 
-K_sh = np.array([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
-                                 1.09254843, 0.31539157, 1.09254843, 0.54627422])
-
-delta_voxel = np.array([1, 1, 1], dtype=float)
 
 
-
-from trilinear_interpolation import *
-
-colors = []
+# from trilinear_interpolation import *
+#
+# colors = []
 # for i, t in enumerate(tics):
 iter = 0
 sample_points_5000 = np.zeros([5000, 3])
@@ -248,9 +257,14 @@ for i in range(5000):
     sample_points = np.clip(sample_points, 0, 254) # svox2.py, line 717
     sample_points_5000[i] = sample_points
 
+np.testing.assert_allclose(pos.numpy(), sample_points_5000)
+
 
 pos_svox = np.load("/home/adrian/Documents/temp/pos_pre_trilinear_0_5000.npy")
 l_svox = np.load("/home/adrian/Documents/temp/l_pre_trilinear_0_5000.npy")
+
+
+
 
 xyz = sample_points_5000
 # xyz = xyz - origin
@@ -293,6 +307,15 @@ from trilinear_interpolation import *
 sh_mine = np.zeros([5000, 9])
 interp_sh_coeffs_mine = np.zeros([5000, 27])
 interp_opacities_mine = np.zeros([5000, 1])
+
+interp_sh_coeffs = trilinear_interpolation(sample_points_5000, grid)
+interp_opacities = trilinear_interpolation(sample_points_5000, opacity)
+
+np.testing.assert_allclose(interp_sh_coeffs, rgb.numpy())
+np.testing.assert_allclose(interp_opacities, sigma.numpy())
+
+
+
 for i in range(5000):
     dir = rays_dir[i]
     dir = np.expand_dims(dir, 0)
@@ -343,4 +366,3 @@ img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 cv2.imwrite(f"render.png", img)
-
