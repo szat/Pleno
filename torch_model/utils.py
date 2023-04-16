@@ -40,6 +40,44 @@ def sh_cartesian(xyz: torch.Tensor, K: torch.Tensor):
         return vec * K
 
 
+def eval_sh_bases(dirs: torch.Tensor,
+                  SH_C0: float, SH_C1: float,
+                  SH_C2: torch.Tensor, SH_C3: torch.Tensor, SH_C4: torch.Tensor,
+                  basis_dim: int = 9) -> torch.Tensor:
+    """
+    Evaluate spherical harmonics bases at unit directions,
+    without taking linear combination.
+    At each point, the final result may the be
+    obtained through simple multiplication.
+    """
+    result = torch.empty([dirs.shape[0], basis_dim], dtype=dirs.dtype, device=dirs.device)
+    result[..., 0] = SH_C0
+    if basis_dim > 1:
+        x, y, z = dirs[:, 0], dirs[:, 1], dirs[:, 2]
+        result[..., 1] = -SH_C1 * y
+        result[..., 2] = SH_C1 * z
+        result[..., 3] = -SH_C1 * x
+        if basis_dim > 4:
+            xx, yy, zz = x * x, y * y, z * z
+            xy, yz, xz = x * y, y * z, x * z
+            result[..., 4] = SH_C2[0] * xy
+            result[..., 5] = SH_C2[1] * yz
+            result[..., 6] = SH_C2[2] * (2.0 * zz - xx - yy)
+            result[..., 7] = SH_C2[3] * xz
+            result[..., 8] = SH_C2[4] * (xx - yy)
+
+            if basis_dim > 9:
+                result[..., 9] = SH_C3[0] * y * (3 * xx - yy)
+                result[..., 10] = SH_C3[1] * xy * z
+                result[..., 11] = SH_C3[2] * y * (4 * zz - xx - yy)
+                result[..., 12] = SH_C3[3] * z * (2 * zz - 3 * xx - 3 * yy)
+                result[..., 13] = SH_C3[4] * x * (4 * zz - xx - yy)
+                result[..., 14] = SH_C3[5] * z * (xx - yy)
+                result[..., 15] = SH_C3[6] * x * (xx - 3 * yy)
+
+    return result
+
+
 def trilinear_interpolation(vecs: torch.Tensor,
                             values: torch.Tensor,
                             origin: torch.Tensor,
@@ -55,21 +93,22 @@ def trilinear_interpolation(vecs: torch.Tensor,
     xd, yd, zd = diff[:, 0], diff[:, 1], diff[:, 2]
     xyz_floor = xyz_floor.to(torch.long)
     x0, y0, z0 = xyz_floor[:, 0], xyz_floor[:, 1], xyz_floor[:, 2]
-    tmp = 1 - xd
+    tmpX = 1 - xd
+    tmpY = 1 - yd
+    tmpZ = 1 - zd
+    a000 = tmpX * tmpY * tmpZ
+    a100 = xd * tmpY * tmpZ
+    a010 = tmpX * yd * tmpZ
+    a110 = xd * yd * tmpZ
+    a001 = tmpX * tmpY * zd
+    a101 = xd * tmpY * zd
+    a011 = tmpX * yd * zd
+    a111 = xd * yd * zd
 
-    xd = xd.unsqueeze(1)
-    yd = yd.unsqueeze(1)
-    zd = zd.unsqueeze(1)
-    tmp = tmp.unsqueeze(1)
-    c00 = values[x0, y0, z0] * tmp + values[x0 + 1, y0, z0] * xd
-    c01 = values[x0, y0 + 1, z0] * tmp + values[x0 + 1, y0 + 1, z0] * xd
-    c10 = values[x0, y0, z0 + 1] * tmp + values[x0 + 1, y0, z0 + 1] * xd
-    c11 = values[x0, y0 + 1, z0 + 1] * tmp + values[x0 + 1, y0 + 1, z0 + 1] * xd
-
-    tmp = 1 - yd
-    c0 = c00 * tmp + c10 * yd
-    c1 = c01 * tmp + c11 * yd
-
-    c = c0 * (1 - zd) + c1 * zd
-
-    return c
+    weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
+    coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
+                         values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
+                         values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
+                         values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
+    
+    return torch.sum(weights * coeff, dim=0)

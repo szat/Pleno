@@ -7,7 +7,7 @@ import torch
 import torch.nn
 import torch.optim
 
-from utils import build_samples, sh_cartesian, trilinear_interpolation
+from utils import build_samples, eval_sh_bases, trilinear_interpolation
 
 
 class RadianceField(torch.nn.Module):
@@ -28,8 +28,36 @@ class RadianceField(torch.nn.Module):
         else:
             self.device = torch.device(device)
         print(self.device)
-        self.K_sh = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
-                                 1.09254843, 0.31539157, 1.09254843, 0.54627422]).to(self.device)
+        ## From the svox paper
+        self.SH_C0 = 0.28209479177387814
+        self.SH_C1 = 0.4886025119029199
+        self.SH_C2 = torch.Tensor([
+                                    1.0925484305920792,
+                                    -1.0925484305920792,
+                                    0.31539156525252005,
+                                    -1.0925484305920792,
+                                    0.5462742152960396
+                                  ])
+        self.SH_C3 = torch.Tensor([
+                                   -0.5900435899266435,
+                                   2.890611442640554,
+                                   -0.4570457994644658,
+                                   0.3731763325901154,
+                                   -0.4570457994644658,
+                                   1.445305721320277,
+                                   -0.5900435899266435
+                                  ])
+        self.SH_C4 = torch.Tensor([
+                                   2.5033429417967046,
+                                   -1.7701307697799304,
+                                   0.9461746957575601,
+                                   -0.6690465435572892,
+                                   0.10578554691520431,
+                                   -0.6690465435572892,
+                                   0.47308734787878004,
+                                   -1.7701307697799304,
+                                   0.6258357354491761,
+                                  ])
         self.nb_samples = nb_samples
         self.delta_voxel = delta_voxel.to(self.device)
         self.idim = idim
@@ -63,13 +91,14 @@ class RadianceField(torch.nn.Module):
         sample_points = build_samples(x, d, samples)
 
         # evaluations harmonics are done at each ray direction:
-        sh = sh_cartesian(d, self.K_sh).repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
+        sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
+        sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
 
         sample_points = torch.flatten(sample_points, 0, 1)
 
         interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
         interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
-        interp_opacities = torch.relu(interp_opacities)
+        interp_opacities = torch.clamp(interp_opacities, 0, 100000)
         
         # nb_rays x nb_samples x nb_channels*num_sh
         interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels)) 
@@ -80,13 +109,14 @@ class RadianceField(torch.nn.Module):
         # render with interp_harmonics and interp_opacities:
         deltas = samples[:, 1:] - samples[:, :-1]
         deltas_times_sigmas = deltas * interp_opacities[:, :-1]
+        deltas_times_sigmas = -deltas_times_sigmas
         cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
         cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
-        samples_color = torch.clamp_min(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0)
-        cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
         deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
-        rays_color = torch.sum(torch.exp(-cum_weighted_deltas) * 
-                               (1 - torch.exp(-deltas_times_sigmas)) * samples_color[:, :-1, :],
+        cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
+        samples_color = torch.clamp(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0, 100000)
+        rays_color = torch.sum(torch.exp(cum_weighted_deltas) * 
+                               (1 - torch.exp(deltas_times_sigmas)) * samples_color[:, :-1, :],
                                dim=1)
         return rays_color
 
