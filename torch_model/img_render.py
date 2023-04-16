@@ -3,14 +3,12 @@ import os
 import sys
 sys.path.append('.')
 
-
+import cv2
 import numpy as np
 import open3d as o3d
 import torch
 
 import model
-# from torch_model import *
-# from torch_model import model
 from sampling_branch import intersect_ray_aabb 
 
 # https://iquilezles.org/articles/noacos/
@@ -119,15 +117,15 @@ def get_camera_rays(camera: Camera):
 
 ######################## Rendering with pytorch model ####################################
 
-# model_name = "drums"
-path = '/home/adrian/Code/svox2/opt/ckpt/exp2/'
-# path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
-path_to_weigths = f"{path}ckpt.npz"
-#path_to_weigths = f"/home/diego/data/nerf/arta_ckpt.npz"
+model_name = "drums"
+path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+#path = '/home/adrian/Code/svox2/opt/ckpt/exp2/'
 img_size = 800
-batch_size = 4*1024
+batch_size = 1024*4
 nb_samples = 512
 nb_sh_channels = 3
+size_model = 256
+device = "cuda"
 
 data = np.load(path_to_weigths, allow_pickle=True)
 
@@ -135,32 +133,42 @@ data = np.load(path_to_weigths, allow_pickle=True)
 npy_radius = data['radius']
 npy_center = data['center']
 npy_links = data['links']
-# npy_links = npy_links[::2, ::2, ::2] # reduce resol to half
+npy_links = npy_links[::2, ::2, ::2] # reduce resol to half
 npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
-density_matrix = torch.from_numpy(np.squeeze(npy_density_data[npy_links.clip(min=0)]))
-density_matrix[density_matrix < 0] = 0 # clip neg. density values
-sh_matrix = torch.from_numpy(npy_sh_data[:, 0:9*nb_sh_channels][npy_links.clip(min=0)])
+mask = npy_links >= 0
+npy_links = npy_links[mask]
 
-rf = model.RadianceField(idim=256, grid=sh_matrix, opacity=density_matrix, 
-                         nb_sh_channels=nb_sh_channels, nb_samples=nb_samples)
+density_matrix = np.zeros((size_model, size_model, size_model, 1), dtype=np.float32)
+density_matrix[mask] = npy_density_data[npy_links]
+density_matrix = np.reshape(density_matrix, (size_model, size_model, size_model))
+density_matrix = torch.from_numpy(density_matrix)
+
+sh_matrix = np.zeros((size_model, size_model, size_model, 27), dtype=np.float16)
+sh_matrix[mask] = npy_sh_data[npy_links]
+sh_matrix = np.reshape(sh_matrix, (size_model, size_model, size_model, 27))
+sh_matrix = torch.from_numpy(sh_matrix)
+
+rf = model.RadianceField(idim=size_model, grid=sh_matrix, opacity=density_matrix, 
+                         nb_sh_channels=nb_sh_channels, nb_samples=nb_samples,
+                         delta_voxel=torch.tensor([1, 1, 1], dtype=torch.float),
+                         device=device)
 
 # load the scene now: for a camera, get the rays
-origin = np.array([257., 257., 257.])
-orientation = np.array([-1, -1, -1])
+origin = np.array([size_model + 20., size_model + 20., size_model + 20.])
+orientation = np.array([-1., -1., -1.])
 orientation = orientation / np.linalg.norm(orientation)
-camera = Camera(origin=origin, orientation=orientation, dist_plane=1, length_x=1, length_y=1,
+camera = Camera(origin=origin, orientation=orientation, dist_plane=2, length_x=1, length_y=1,
                 pixels_x=img_size, pixels_y=img_size)
-
 rays_cam = get_camera_rays(camera)
-rays_origins = np.tile(origin, (img_size*img_size, 1))
-rays_dirs = rays_cam.reshape((img_size*img_size, 3))
+rays_origins = np.tile(origin, (img_size*img_size, 1)).astype(np.float32)
+rays_dirs = rays_cam.reshape((img_size*img_size, 3)).astype(np.float32)
 
 
 box_min = np.zeros(rays_origins.shape)
-box_max = np.ones(rays_origins.shape)*255
+box_max = np.ones(rays_origins.shape)*(size_model - 2)
 ray_inv_dirs = 1. / rays_dirs
 tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
 mask = tmin < tmax
@@ -173,14 +181,17 @@ print("shape of rays to render:", valid_rays_origins.shape)
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = rendered_rays
+max_val = np.max(complete_colors)
+min_val = np.min(complete_colors)
+print("max px val:", max_val)
+print("min px val:", min_val)
+complete_colors[complete_colors > 1] = 1
+complete_colors[complete_colors < 0] = 0
+
 img = np.reshape(complete_colors, (img_size, img_size, nb_sh_channels))
-img = np.array(img)
-
-import cv2
-
+img = (img * 255).astype(np.uint8)
 if nb_sh_channels == 2:
     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
-img = (img * 255).astype(np.uint8)
-if nb_sh_channels == 3:
+elif nb_sh_channels == 3:
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 cv2.imwrite(f"render_ex_ch{nb_sh_channels}_{img_size}x{img_size}_s{nb_samples}.png", img)

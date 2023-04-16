@@ -7,9 +7,7 @@ import torch
 import torch.nn
 import torch.optim
 
-from frustum_branch_torch import frustum_to_harmonics, rays_to_frustum
-from spherical_harmonics_torch import sh_cartesian
-from trilinear_interpolation_torch import trilinear_interpolation
+from utils import build_samples, sh_cartesian, trilinear_interpolation
 
 
 class RadianceField(torch.nn.Module):
@@ -22,18 +20,17 @@ class RadianceField(torch.nn.Module):
                  grid: torch.Tensor = None,
                  delta_voxel: torch.Tensor=torch.tensor([1, 1, 1], dtype=torch.float),
                  w_tv_harms: float = 1,
-                 w_tv_opacity: float = 1):
+                 w_tv_opacity: float = 1,
+                 device: str = None):
         super().__init__()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = torch.device(device)
         print(self.device)
-        # relative 8 ijk-neighbours:
-        self.delta_ijk = torch.tensor([(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0),
-                                       (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
-                                       dtype=torch.int64).reshape((8, 3)).to(self.device)
         self.K_sh = torch.Tensor([0.28209479, 0.48860251, 0.48860251, 0.48860251, 1.09254843,
                                  1.09254843, 0.31539157, 1.09254843, 0.54627422]).to(self.device)
         self.nb_samples = nb_samples
-        assert nb_samples > 1
         self.delta_voxel = delta_voxel.to(self.device)
         self.idim = idim
         self.nb_sh_channels = nb_sh_channels
@@ -44,12 +41,11 @@ class RadianceField(torch.nn.Module):
         else:
             self.grid = torch.nn.Parameter(grid.to(self.device))
         if opacity is None:
-            self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim), device=self.device))
+            self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim, 1), device=self.device))
         else:
-            self.opacity = torch.nn.Parameter(opacity.to(self.device))
-        self.inf = torch.tensor(float(idim)*idim*idim)
+            self.opacity = torch.nn.Parameter(opacity.to(self.device).unsqueeze(3))
         self.box_min = torch.Tensor([[0, 0, 0]]).to(self.device)
-        self.box_max = torch.Tensor([[float(idim-1), idim-1, idim-1]]).to(self.device)
+        self.inf = torch.prod(idim*self.delta_voxel)
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 
@@ -59,31 +55,27 @@ class RadianceField(torch.nn.Module):
         """
 
         nb_rays = x.shape[0]
-
-        samples = torch.rand((nb_rays, self.nb_samples), dtype=x.dtype, device=self.device)
+        samples = torch.arange(start=0.05, end=0.95, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
+        samples = samples.unsqueeze(0).expand(nb_rays, samples.shape[0])
         tmin = tmin.reshape((-1, 1))
         tmax = tmax.reshape((-1, 1))
         samples = (tmax - tmin) * samples + tmin
-        samples, _ = torch.sort(samples, dim=1)
-        frustum, sample_points  = rays_to_frustum(x, d, samples, self.delta_ijk, self.delta_voxel)
-        neigh_harmonics_coeffs, neigh_opacities = frustum_to_harmonics(frustum, self.grid, self.opacity)
+        sample_points = build_samples(x, d, samples)
 
         # evaluations harmonics are done at each ray direction:
         sh = sh_cartesian(d, self.K_sh).repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
 
         sample_points = torch.flatten(sample_points, 0, 1)
-        neigh_harmonics_coeffs = torch.flatten(neigh_harmonics_coeffs, 0, 1) # nb_rays*nb_samples x 8 x nb_channels*nb_sh
-        neigh_opacities = torch.flatten(neigh_opacities, 0, 1)
-        neigh_opacities = neigh_opacities.unsqueeze(2)
 
-        interp_sh_coeffs = trilinear_interpolation(sample_points, neigh_harmonics_coeffs, self.box_min, self.delta_voxel)
-        interp_opacities = trilinear_interpolation(sample_points, neigh_opacities, self.box_min, self.delta_voxel)
+        interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
+        interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
+        interp_opacities = torch.relu(interp_opacities)
         
         # nb_rays x nb_samples x nb_channels*num_sh
-        interp_sh_coeffs = torch.reshape(interp_sh_coeffs, (nb_rays, self.nb_samples, 9*self.nb_sh_channels)) 
-        interp_opacities = torch.reshape(interp_opacities, (nb_rays, self.nb_samples)) # nb_rays x nb_samples
+        interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels)) 
+        interp_opacities = interp_opacities.reshape((nb_rays, samples.shape[1])) # nb_rays x nb_samples
         interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
-        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, self.nb_samples, self.nb_sh_channels, 9))
+        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, samples.shape[1], self.nb_sh_channels, 9))
         
         # render with interp_harmonics and interp_opacities:
         deltas = samples[:, 1:] - samples[:, :-1]
