@@ -343,3 +343,4 @@ img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 cv2.imwrite(f"render.png", img)
+

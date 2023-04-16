@@ -2,7 +2,7 @@ import numpy as np
 from trilinear_interpolation import *
 from sampling_branch import intersect_ray_aabb
 from spherical_harmonics import eval_sh_bases_mine
-
+# smomethn
 path = '/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz'
 img_size = 800
 # batch_size = 4*1024
