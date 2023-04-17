@@ -105,23 +105,39 @@ def trilinear_interpolation(vecs: torch.Tensor,
     # a011 = tmpX * yd * zd
     # a111 = xd * yd * zd
 
-    tXtY = tmpX * tmpY
-    xdyd = xd * yd
-    xdtY = xd * tmpY
-    tXyd = tmpX * yd
-    a000 = tXtY * tmpZ
-    a100 = xdtY * tmpZ
-    a010 = tXyd * tmpZ
-    a110 = xdyd * tmpZ
-    a001 = tXtY * zd
-    a101 = xdtY * zd
-    a011 = tXyd * zd
-    a111 = xdyd * zd
+    a000 = tmpX * tmpY
+    a100 = xd * tmpY
+    a010 = tmpX * yd
+    a110 = xd * yd
 
-    weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
+    # weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
+    # weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
+    # coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
+    #                      values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
+    #                      values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
+    #                      values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
+
+    weights = torch.stack([a000, a010, a100, a110]).unsqueeze(2)
     coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
                          values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
                          values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
                          values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
-    
+
+    tmpZ = tmpZ[None, :, None]
+    zd = zd[None, :, None]
+
+    new = torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ \
+          + torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
+
+    # tmpZ = tmpZ[None, :, None]
+    # zd = zd[None, :, None]
+
+    # weights_tmpZ = torch.stack([a000, a001, a010, a011]).unsqueeze(2)
+    # weights_zd = torch.stack([a100, a101, a110, a111]).unsqueeze(2)
+    # coeff_tmpZ = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
+    #                           values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1]])
+    # coeff_zd = torch.stack([values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
+    #                         values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
+    old = torch.sum(weights * coeff, dim=0)
+    torch.sum(torch.abs(old - new))
     return torch.sum(weights * coeff, dim=0)

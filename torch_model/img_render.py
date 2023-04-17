@@ -126,7 +126,7 @@ batch_size = 1024*4
 nb_samples = 512
 nb_sh_channels = 3
 size_model = 256
-device = "cuda"
+device = "cpu"
 
 data = np.load(path_to_weigths, allow_pickle=True)
 
