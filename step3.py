@@ -27,7 +27,7 @@ dir = np.load("/home/adrian/Documents/temp/svox_dir.npy")
 
 # transform to world coords
 step_size = 0.5
-delta_scale = 1/128
+delta_scale = 1/256
 gsz = 256
 offset = 0.5 * gsz - 0.5  # 0.5 * 256 - 0.5
 scaling = 0.5 * gsz  # 0.5 * 256
@@ -65,10 +65,10 @@ for i in range(800*800):
     rgb = np.sum(rgb, axis=2)
     rgb = rgb + 0.5 #correction 1
     rgb = np.clip(rgb, a_min=0.0, a_max=100000)
-    tmp = -step_size * sigma * delta_scale
-    tmp = np.clip(tmp, a_min=0, a_max=100000)
-    var = 1 - np.exp(tmp)
-    Ti = np.exp(np.cumsum(tmp))
+    tmp = step_size * sigma * delta_scale
+    # tmp = np.clip(tmp, a_min=0.0, a_max=100000)
+    var = 1 - np.exp(-tmp)
+    Ti = np.exp(np.cumsum(-tmp))
     Ti = Ti[:, None]
     coefs = Ti * var
     rgb = coefs * rgb
