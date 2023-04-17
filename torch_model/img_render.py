@@ -5,14 +5,13 @@ sys.path.append('.')
 
 import cv2
 import numpy as np
-import open3d as o3d
+# import open3d as o3d
 import torch
 
 #from camera import Camera
 from sampling_branch import intersect_ray_aabb 
 import model
-
-
+torch.cuda.empty_cache()
 
 # https://iquilezles.org/articles/noacos/
 def rotation_align(from_vec, to_vec):
@@ -62,24 +61,24 @@ class Camera:
         self.pixels_y = pixels_y
 
 
-def get_arrow(start_point, end_point, color=[0.3, 0.3, 0.3], thickness=1):
-    vec = end_point - start_point
-    norm = np.linalg.norm(vec)
-    cone_height = norm * 0.2
-    cylinder_height = norm * 0.8
-    cone_radius = 0.2 * thickness
-    cylinder_radius = 0.1 * thickness
-    arrow = o3d.geometry.TriangleMesh.create_arrow(cone_radius=cone_radius,
-                                                     cone_height=cone_height,
-                                                     cylinder_radius=cylinder_radius,
-                                                     cylinder_height=cylinder_height)
-    vec = vec / norm
-    R = rotation_align(np.array([0, 0, 1]), vec)
-    arrow.rotate(R, center=np.zeros(3))
-    arrow.translate(start_point)
-    arrow.compute_vertex_normals()
-    arrow.paint_uniform_color(color)
-    return arrow
+# def get_arrow(start_point, end_point, color=[0.3, 0.3, 0.3], thickness=1):
+#     vec = end_point - start_point
+#     norm = np.linalg.norm(vec)
+#     cone_height = norm * 0.2
+#     cylinder_height = norm * 0.8
+#     cone_radius = 0.2 * thickness
+#     cylinder_radius = 0.1 * thickness
+#     arrow = o3d.geometry.TriangleMesh.create_arrow(cone_radius=cone_radius,
+#                                                      cone_height=cone_height,
+#                                                      cylinder_radius=cylinder_radius,
+#                                                      cylinder_height=cylinder_height)
+#     vec = vec / norm
+#     R = rotation_align(np.array([0, 0, 1]), vec)
+#     arrow.rotate(R, center=np.zeros(3))
+#     arrow.translate(start_point)
+#     arrow.compute_vertex_normals()
+#     arrow.paint_uniform_color(color)
+#     return arrow
 
 
 def get_camera_vectors(camera: Camera):
@@ -120,7 +119,8 @@ def get_camera_rays(camera: Camera):
 
 
 model_name = "lego"
-path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+# path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+path_to_weigths = f"/home/adrian/Documents/Nerf/256_to_512_fasttv/{model_name}/ckpt.npz"
 img_size = 800
 batch_size = 1024*4
 nb_samples = 512
@@ -214,7 +214,10 @@ valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
 valid_tmin = torch.from_numpy(tmin[mask])
 valid_tmax = torch.from_numpy(tmax[mask])
 
+
 print("shape of rays to render:", valid_rays_origins.shape)
+rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
+rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = rendered_rays

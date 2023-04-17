@@ -96,14 +96,27 @@ def trilinear_interpolation(vecs: torch.Tensor,
     tmpX = 1 - xd
     tmpY = 1 - yd
     tmpZ = 1 - zd
-    a000 = tmpX * tmpY * tmpZ
-    a100 = xd * tmpY * tmpZ
-    a010 = tmpX * yd * tmpZ
-    a110 = xd * yd * tmpZ
-    a001 = tmpX * tmpY * zd
-    a101 = xd * tmpY * zd
-    a011 = tmpX * yd * zd
-    a111 = xd * yd * zd
+    # a000 = tmpX * tmpY * tmpZ
+    # a100 = xd * tmpY * tmpZ
+    # a010 = tmpX * yd * tmpZ
+    # a110 = xd * yd * tmpZ
+    # a001 = tmpX * tmpY * zd
+    # a101 = xd * tmpY * zd
+    # a011 = tmpX * yd * zd
+    # a111 = xd * yd * zd
+
+    tXtY = tmpX * tmpY
+    xdyd = xd * yd
+    xdtY = xd * tmpY
+    tXyd = tmpX * yd
+    a000 = tXtY * tmpZ
+    a100 = xdtY * tmpZ
+    a010 = tXyd * tmpZ
+    a110 = xdyd * tmpZ
+    a001 = tXtY * zd
+    a101 = xdtY * zd
+    a011 = tXyd * zd
+    a111 = xdyd * zd
 
     weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
     coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],

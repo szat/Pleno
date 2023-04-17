@@ -8,7 +8,7 @@ import torch.nn
 import torch.optim
 
 from utils import build_samples, eval_sh_bases, trilinear_interpolation
-
+from torch.profiler import profile, record_function, ProfilerActivity
 
 class RadianceField(torch.nn.Module):
 
@@ -81,49 +81,58 @@ class RadianceField(torch.nn.Module):
         """
         x, d define origins and directions of rays
         """
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            with record_function("total_forward"):
+                nb_rays = x.shape[0]
+                samples = torch.arange(start=0.05, end=0.95, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
+                samples = samples.unsqueeze(0).expand(nb_rays, samples.shape[0])
+                tmin = tmin.reshape((-1, 1))
+                tmax = tmax.reshape((-1, 1))
+                samples = (tmax - tmin) * samples + tmin
+                sample_points = build_samples(x, d, samples)
 
-        nb_rays = x.shape[0]
-        samples = torch.arange(start=0.05, end=0.95, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
-        samples = samples.unsqueeze(0).expand(nb_rays, samples.shape[0])
-        tmin = tmin.reshape((-1, 1))
-        tmax = tmax.reshape((-1, 1))
-        samples = (tmax - tmin) * samples + tmin
-        sample_points = build_samples(x, d, samples)
+                # evaluations harmonics are done at each ray direction:
+                with record_function("sh_part"):
+                    sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
+                    sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
 
-        # evaluations harmonics are done at each ray direction:
-        sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
-        sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
+                sample_points = torch.flatten(sample_points, 0, 1)
 
-        sample_points = torch.flatten(sample_points, 0, 1)
+                with record_function("tri_grid_part"):
+                    interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
+                with record_function("tri_density_part"):
+                    interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
+                    interp_opacities = torch.clamp(interp_opacities, 0, 100000)
 
-        interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
-        interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
-        interp_opacities = torch.clamp(interp_opacities, 0, 100000)
-        
-        # nb_rays x nb_samples x nb_channels*num_sh
-        interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels)) 
-        interp_opacities = interp_opacities.reshape((nb_rays, samples.shape[1])) # nb_rays x nb_samples
-        interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
-        interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, samples.shape[1], self.nb_sh_channels, 9))
-        
-        # render with interp_harmonics and interp_opacities:
-        deltas = samples[:, 1:] - samples[:, :-1]
-        deltas_times_sigmas = deltas * interp_opacities[:, :-1]
-        deltas_times_sigmas = -deltas_times_sigmas
-        cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
-        cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
-        deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
-        cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
-        samples_color = torch.clamp(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0, 100000)
-        rays_color = torch.sum(torch.exp(cum_weighted_deltas) * 
-                               (1 - torch.exp(deltas_times_sigmas)) * samples_color[:, :-1, :],
-                               dim=1)
+                # nb_rays x nb_samples x nb_channels*num_sh
+                with record_function("addition_part"):
+                    interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels))
+                    interp_opacities = interp_opacities.reshape((nb_rays, samples.shape[1])) # nb_rays x nb_samples
+                    interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
+                    interp_harmonics = torch.reshape(interp_harmonics, (nb_rays, samples.shape[1], self.nb_sh_channels, 9))
+
+                    # render with interp_harmonics and interp_opacities:
+                    deltas = samples[:, 1:] - samples[:, :-1]
+                    deltas_times_sigmas = deltas * interp_opacities[:, :-1]
+                    deltas_times_sigmas = -deltas_times_sigmas
+                    cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
+                    cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
+                    deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
+                    cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
+                    samples_color = torch.clamp(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0, 100000)
+                    rays_color = torch.sum(torch.exp(cum_weighted_deltas) *
+                                           (1 - torch.exp(deltas_times_sigmas)) * samples_color[:, :-1, :],
+                                           dim=1)
+        print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         return rays_color
 
     def render_rays(self, ray_origins: torch.Tensor, ray_dirs: torch.Tensor,
                     tmin: torch.Tensor, tmax: torch.Tensor,
                     batch_size: int) -> torch.Tensor:
 
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]):
+        #     with record_function("total_render"):
         ray_origins = ray_origins.to(self.device)
         ray_dirs = ray_dirs.to(self.device)
         color_batched = []
