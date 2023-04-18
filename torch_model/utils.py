@@ -96,6 +96,11 @@ def trilinear_interpolation(vecs: torch.Tensor,
     tmpX = 1 - xd
     tmpY = 1 - yd
     tmpZ = 1 - zd
+    a000 = tmpX * tmpY
+    a100 = xd * tmpY
+    a010 = tmpX * yd
+    a110 = xd * yd
+
     # a000 = tmpX * tmpY * tmpZ
     # a100 = xd * tmpY * tmpZ
     # a010 = tmpX * yd * tmpZ
@@ -104,13 +109,6 @@ def trilinear_interpolation(vecs: torch.Tensor,
     # a101 = xd * tmpY * zd
     # a011 = tmpX * yd * zd
     # a111 = xd * yd * zd
-
-    a000 = tmpX * tmpY
-    a100 = xd * tmpY
-    a010 = tmpX * yd
-    a110 = xd * yd
-
-    # weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
     # weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
     # coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
     #                      values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
@@ -126,18 +124,6 @@ def trilinear_interpolation(vecs: torch.Tensor,
     tmpZ = tmpZ[None, :, None]
     zd = zd[None, :, None]
 
-    new = torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ \
-          + torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
-
-    # tmpZ = tmpZ[None, :, None]
-    # zd = zd[None, :, None]
-
-    # weights_tmpZ = torch.stack([a000, a001, a010, a011]).unsqueeze(2)
-    # weights_zd = torch.stack([a100, a101, a110, a111]).unsqueeze(2)
-    # coeff_tmpZ = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
-    #                           values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1]])
-    # coeff_zd = torch.stack([values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
-    #                         values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
-    old = torch.sum(weights * coeff, dim=0)
-    torch.sum(torch.abs(old - new))
-    return torch.sum(weights * coeff, dim=0)
+    # old = torch.sum(weights * coeff, dim=0)
+    # torch.sum(torch.abs(old - new))
+    return torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ + torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd

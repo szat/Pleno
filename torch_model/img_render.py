@@ -126,7 +126,7 @@ batch_size = 1024*4
 nb_samples = 512
 nb_sh_channels = 3
 size_model = 256
-device = "cpu"
+device = "cuda"
 
 data = np.load(path_to_weigths, allow_pickle=True)
 
@@ -218,7 +218,10 @@ valid_tmax = torch.from_numpy(tmax[mask])
 print("shape of rays to render:", valid_rays_origins.shape)
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
+import time
+t0 = time.time()
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
+print(time.time() - t0)
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = rendered_rays
 max_val = np.max(complete_colors)
