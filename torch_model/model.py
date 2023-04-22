@@ -8,7 +8,7 @@ import torch.nn
 import torch.optim
 
 from utils import build_samples, eval_sh_bases, trilinear_interpolation
-from torch.profiler import profile, record_function, ProfilerActivity
+
 
 class RadianceField(torch.nn.Module):
 
@@ -27,7 +27,7 @@ class RadianceField(torch.nn.Module):
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         else:
             self.device = torch.device(device)
-        print(self.device)
+        print("model using", self.device)
         ## From the svox paper
         self.SH_C0 = 0.28209479177387814
         self.SH_C1 = 0.4886025119029199
@@ -37,7 +37,7 @@ class RadianceField(torch.nn.Module):
                                     0.31539156525252005,
                                     -1.0925484305920792,
                                     0.5462742152960396
-                                  ])
+                                  ]).to(self.device)
         self.SH_C3 = torch.Tensor([
                                    -0.5900435899266435,
                                    2.890611442640554,
@@ -46,7 +46,7 @@ class RadianceField(torch.nn.Module):
                                    -0.4570457994644658,
                                    1.445305721320277,
                                    -0.5900435899266435
-                                  ])
+                                  ]).to(self.device)
         self.SH_C4 = torch.Tensor([
                                    2.5033429417967046,
                                    -1.7701307697799304,
@@ -57,7 +57,7 @@ class RadianceField(torch.nn.Module):
                                    0.47308734787878004,
                                    -1.7701307697799304,
                                    0.6258357354491761,
-                                  ])
+                                  ]).to(self.device)
         self.nb_samples = nb_samples
         self.delta_voxel = delta_voxel.to(self.device)
         self.idim = idim
@@ -72,8 +72,7 @@ class RadianceField(torch.nn.Module):
             self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim, 1), device=self.device))
         else:
             self.opacity = torch.nn.Parameter(opacity.to(self.device).unsqueeze(3))
-        self.box_min = torch.Tensor([[0, 0, 0]]).to(self.device)
-        self.inf = torch.prod(idim*self.delta_voxel)
+        self.box_min = - 2 / self.delta_voxel / idim
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 
@@ -81,31 +80,25 @@ class RadianceField(torch.nn.Module):
         """
         x, d define origins and directions of rays
         """
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-        #     with record_function("total_forward"):
         nb_rays = x.shape[0]
-        samples = torch.arange(start=0.05, end=0.95, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
+        samples = torch.arange(start=0, end=1, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
         samples = samples.unsqueeze(0).expand(nb_rays, samples.shape[0])
         tmin = tmin.reshape((-1, 1))
         tmax = tmax.reshape((-1, 1))
         samples = (tmax - tmin) * samples + tmin
         sample_points = build_samples(x, d, samples)
 
-                # evaluations harmonics are done at each ray direction:
-                # with record_function("sh_part"):
+        # harmonics evaluations are done at each ray direction:
         sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
         sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
 
         sample_points = torch.flatten(sample_points, 0, 1)
 
-                # with record_function("tri_grid_part"):
         interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
-                # with record_function("tri_density_part"):
         interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
-        interp_opacities = torch.clamp(interp_opacities, 0, 100000)
+        interp_opacities = torch.relu(interp_opacities)
 
-                # nb_rays x nb_samples x nb_channels*num_sh
-                # with record_function("addition_part"):
+        # nb_rays x nb_samples x nb_channels*num_sh
         interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels))
         interp_opacities = interp_opacities.reshape((nb_rays, samples.shape[1])) # nb_rays x nb_samples
         interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
@@ -119,23 +112,24 @@ class RadianceField(torch.nn.Module):
         cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
         deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
         cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
-        samples_color = torch.clamp(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0, 100000)
+        samples_color = torch.sum(interp_harmonics, dim=3) + 0.5
         rays_color = torch.sum(torch.exp(cum_weighted_deltas) *
                                (1 - torch.exp(deltas_times_sigmas)) * samples_color[:, :-1, :],
                                dim=1)
-        # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-        # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-        return rays_color
+        return rays_color, torch.sum(interp_opacities, dim=1)
 
     def render_rays(self, ray_origins: torch.Tensor, ray_dirs: torch.Tensor,
                     tmin: torch.Tensor, tmax: torch.Tensor,
                     batch_size: int) -> torch.Tensor:
-
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]):
-        #     with record_function("total_render"):
+        
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        
         ray_origins = ray_origins.to(self.device)
         ray_dirs = ray_dirs.to(self.device)
         color_batched = []
+        opacity_batched = []
+        start.record()
         with torch.no_grad():
             for batch_start in range(0, ray_dirs.shape[0], batch_size):
                 batch_end = min(batch_start + batch_size, ray_dirs.shape[0])
@@ -147,9 +141,14 @@ class RadianceField(torch.nn.Module):
                 tmin_batched = tmin_batched.to(self.device)
                 tmax_batched = tmax[batch_start:batch_end]
                 tmax_batched = tmax_batched.to(self.device)
-                color_batched.append(self(origins_batched, dirs_batched,tmin_batched, tmax_batched).cpu())
+                color_batch, opacity_batch = self(origins_batched, dirs_batched,tmin_batched, tmax_batched)
+                color_batched.append(color_batch.cpu())
+                opacity_batched.append(opacity_batch.cpu())
+        end.record()
+        torch.cuda.synchronize()
+        print("render cuda time (secs):", start.elapsed_time(end)/1000)
 
-        return torch.cat(color_batched)
+        return torch.cat(color_batched), torch.cat(opacity_batched)
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:
 

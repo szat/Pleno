@@ -22,24 +22,6 @@ def build_samples(ray_origins: torch.Tensor,
     return sample_vecs
 
 
-def sh_cartesian(xyz: torch.Tensor, K: torch.Tensor):
-    if xyz.ndim == 1:
-        r = torch.linalg.norm(xyz)
-        xyz = xyz / r
-        x, y, z = xyz[0], xyz[1], xyz[2]
-        vec = torch.Tensor([1, y, z, x, x * y, y * z, 3 * z ** 2 - 1, x * z, x ** 2 - y ** 2],
-                           device=xyz.device)
-        return vec * K
-    else:
-        r = torch.linalg.norm(xyz, axis=1)
-        r = torch.unsqueeze(r, 1)
-        xyz = xyz / r
-        x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
-        ones = torch.ones(x.size(), device=xyz.device)
-        vec = torch.vstack([ones, y, z, x, x * y, y * z, 3 * z ** 2 - 1, x * z, x ** 2 - y ** 2]).T
-        return vec * K
-
-
 def eval_sh_bases(dirs: torch.Tensor,
                   SH_C0: float, SH_C1: float,
                   SH_C2: torch.Tensor, SH_C3: torch.Tensor, SH_C4: torch.Tensor,
@@ -83,7 +65,6 @@ def trilinear_interpolation(vecs: torch.Tensor,
                             origin: torch.Tensor,
                             delta_voxel: torch.Tensor):
     # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
-    # Case when only 1 entry to interpolate, want shape [3, nb]
     xyz = vecs - origin
     xyz = xyz / delta_voxel
 
@@ -101,29 +82,15 @@ def trilinear_interpolation(vecs: torch.Tensor,
     a010 = tmpX * yd
     a110 = xd * yd
 
-    # a000 = tmpX * tmpY * tmpZ
-    # a100 = xd * tmpY * tmpZ
-    # a010 = tmpX * yd * tmpZ
-    # a110 = xd * yd * tmpZ
-    # a001 = tmpX * tmpY * zd
-    # a101 = xd * tmpY * zd
-    # a011 = tmpX * yd * zd
-    # a111 = xd * yd * zd
-    # weights = torch.stack([a000, a001, a010, a011, a100, a101, a110, a111]).unsqueeze(2)
-    # coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
-    #                      values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
-    #                      values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
-    #                      values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
-
     weights = torch.stack([a000, a010, a100, a110]).unsqueeze(2)
     coeff = torch.stack([values[x0, y0, z0], values[x0, y0, z0 + 1],
                          values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
                          values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
                          values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
 
-    tmpZ = tmpZ[None, :, None]
-    zd = zd[None, :, None]
+    tmpZ = tmpZ.unsqueeze(0).unsqueeze(-1)
+    zd = zd.unsqueeze(0).unsqueeze(-1)
 
-    # old = torch.sum(weights * coeff, dim=0)
-    # torch.sum(torch.abs(old - new))
-    return torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ + torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
+    inter_values = torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ + \
+                   torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
+    return inter_values
