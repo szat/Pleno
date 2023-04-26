@@ -164,11 +164,6 @@ def trilinear_interpolation_dot(xyz, c, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1
                      c[x1, y0, z0], c[x1, y0, z1],
                      c[x1, y1, z0], c[x1, y1, z1]])
 
-    # cvec = np.array([c[x0, y0, z0], c[x1, y0, z0],
-    #                  c[x0, y1, z0], c[x1, y1, z0],
-    #                  c[x0, y0, z1], c[x1, y0, z1],
-    #                  c[x0, y1, z1], c[x1, y1, z1]])
-
     avec = np.array([a000, a001, a010, a011, a100, a101, a110, a111])
     # avec = np.array([a000, a100, a010, a110, a001, a101, a011, a111])
 
@@ -177,3 +172,38 @@ def trilinear_interpolation_dot(xyz, c, origin=np.zeros(3), dx=1.0, dy=1.0, dz=1
     if len(res.shape) == 1:
         res = np.expand_dims(res, axis=1)
     return res
+
+
+def trilinear_interpolation_short(vecs, values, origin, delta_voxel):
+    # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
+    # Case when only 1 entry to interpolate, want shape [3, nb]
+    xyz = vecs - origin
+    xyz = xyz / delta_voxel
+
+    xyz_floor = np.floor(xyz)
+    diff = xyz - xyz_floor
+
+    xd, yd, zd = diff[:, 0], diff[:, 1], diff[:, 2]
+    xyz_floor = xyz_floor.astype(int)
+    x0, y0, z0 = xyz_floor[:, 0], xyz_floor[:, 1], xyz_floor[:, 2]
+    tmpX = 1 - xd
+    tmpY = 1 - yd
+    tmpZ = 1 - zd
+    a000 = tmpX * tmpY
+    a100 = xd * tmpY
+    a010 = tmpX * yd
+    a110 = xd * yd
+
+    weights = np.array([a000, a010, a100, a110])
+    coeff = np.array([values[x0, y0, z0], values[x0, y0, z0 + 1],
+                         values[x0, y0 + 1, z0], values[x0, y0 + 1, z0 + 1],
+                         values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
+                         values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
+
+    weights = weights[:, :, None]
+    if tmpZ.ndim == 1 and zd.ndim == 1:
+        tmpZ = tmpZ[:, None]
+        zd = zd[:, None]
+
+    res = np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd
+    return np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd

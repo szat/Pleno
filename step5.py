@@ -2,7 +2,7 @@ import numpy as np
 from trilinear_interpolation import *
 from sampling_branch import intersect_ray_aabb
 from spherical_harmonics import eval_sh_bases_mine
-# smomethn
+
 path = '/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz'
 img_size = 800
 # batch_size = 4*1024
@@ -54,13 +54,23 @@ for i in range(len(tmin)):
     tics.append(np.arange(tmin[i], tmax[i], spacing))
 
 for i in range(800*800):
+    i = 65000
     samples = ori[i, None] + tics[i][:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
-    # sigma = trilinear_interpolation_dot(samples, opacity)
-    sigma = trilinear_interpolation_short(samples, opacity, np.array([0,0,0]), np.array([1,1,1]))
+    samples_pos = samples.astype(int)
+    links = npy_links[samples_pos[:, 0], samples_pos[:, 1], samples_pos[:, 2]]
+    mask = links >= 0
+    links = links[mask]
+    op = npy_density_data[links]
+    gr = npy_sh_data[links]
+    samples_pos = samples_pos[mask]
+    samples = samples[mask]
+
+    # we just need the nbh of the points in samples, so we need the grid points to be passed in the right way
+
+    sigma = trilinear_interpolation_dot(samples, opacity)
     sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    # rgb = trilinear_interpolation_dot(samples, grid)
-    rgb = trilinear_interpolation_short(samples, grid, np.array([0,0,0]), np.array([1,1,1]))
+    rgb = trilinear_interpolation_dot(samples, grid)
     rgb = rgb.reshape(-1, 3, 9)
     sh_ray = sh[i][None, None, :]
     rgb = rgb * sh_ray
@@ -79,15 +89,9 @@ for i in range(800*800):
     print(i)
 
 img = colors.reshape([800,800,3])
-
 import cv2
-
-img = (img * 255).astype(np.uint8)
-# if nb_sh_channels == 3:
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 # if nb_sh_channels == 2:
 #     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
