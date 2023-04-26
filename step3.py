@@ -85,9 +85,4 @@ import cv2
 img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-# if nb_sh_channels == 2:
-#     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
-img = (img * 255).astype(np.uint8)
-# if nb_sh_channels == 3:
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 

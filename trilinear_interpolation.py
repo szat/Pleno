@@ -205,5 +205,86 @@ def trilinear_interpolation_short(vecs, values, origin, delta_voxel):
         tmpZ = tmpZ[:, None]
         zd = zd[:, None]
 
-    res = np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd
     return np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd
+
+
+def trilinear_interpolation_shuffle(vecs, links, values_compressed, origin=np.zeros(3), delta_voxel=np.ones(3)):
+    # Normalize, transform into origin = (0,0,0) and dx = dy = dz = 1
+    # Case when only 1 entry to interpolate, want shape [3, nb]
+    if vecs.ndim == 1:
+        vecs = vecs[None, :]
+
+    dims = values_compressed.shape[1]
+    nb_samples = vecs.shape[0]
+    res = np.zeros([nb_samples, dims])
+
+    xyz = vecs - origin
+    xyz = xyz / delta_voxel
+    xyz_floor = np.floor(xyz)
+    diff = xyz - xyz_floor
+    xd, yd, zd = diff[:, 0], diff[:, 1], diff[:, 2]
+
+    xyz_floor = xyz_floor.astype(int)
+    x0, y0, z0 = xyz_floor[:, 0], xyz_floor[:, 1], xyz_floor[:, 2]
+
+    l000 = links[x0, y0, z0]
+    l100 = links[x0+1, y0, z0]
+    l010 = links[x0, y0+1, z0]
+    l001 = links[x0, y0, z0+1]
+    l110 = links[x0+1, y0+1, z0]
+    l011 = links[x0, y0+1, z0+1]
+    l101 = links[x0+1, y0, z0+1]
+    l111 = links[x0+1, y0+1, z0+1]
+
+    mask_l000 = l000 >= 0
+    mask_l100 = l100 >= 0
+    mask_l010 = l010 >= 0
+    mask_l001 = l001 >= 0
+    mask_l110 = l110 >= 0
+    mask_l011 = l011 >= 0
+    mask_l101 = l101 >= 0
+    mask_l111 = l111 >= 0
+
+    mask = mask_l000 & mask_l100 & mask_l010 & mask_l001 & mask_l110 & mask_l011 & mask_l101 & mask_l111
+
+    l000 = l000[mask]
+    l100 = l100[mask]
+    l010 = l010[mask]
+    l001 = l001[mask]
+    l110 = l110[mask]
+    l011 = l011[mask]
+    l101 = l101[mask]
+    l111 = l111[mask]
+
+    v000 = values_compressed[l000]
+    v100 = values_compressed[l100]
+    v010 = values_compressed[l010]
+    v001 = values_compressed[l001]
+    v110 = values_compressed[l110]
+    v011 = values_compressed[l011]
+    v101 = values_compressed[l101]
+    v111 = values_compressed[l111]
+
+    xd = xd[mask]
+    yd = yd[mask]
+    zd = zd[mask]
+
+    tmpX = 1 - xd
+    tmpY = 1 - yd
+    tmpZ = 1 - zd
+    a000 = tmpX * tmpY
+    a100 = xd * tmpY
+    a010 = tmpX * yd
+    a110 = xd * yd
+    weights = np.array([a000, a010, a100, a110])
+
+    coeff = np.array([v000, v001, v010, v011, v100, v101, v110, v111])
+
+    weights = weights[:, :, None]
+    if tmpZ.ndim == 1 and zd.ndim == 1:
+        tmpZ = tmpZ[:, None]
+        zd = zd[:, None]
+
+    out = np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd
+    res[mask] = out
+    return res

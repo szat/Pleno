@@ -16,11 +16,11 @@ npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
-mask = npy_links >= 0
-grid = np.zeros([256, 256, 256, 27])
-grid[mask] = npy_sh_data[npy_links[mask]]
-opacity = np.zeros([256, 256, 256, 1])
-opacity[mask] = npy_density_data[npy_links[mask]]
+# mask = npy_links >= 0
+# grid = np.zeros([256, 256, 256, 27])
+# grid[mask] = npy_sh_data[npy_links[mask]]
+# opacity = np.zeros([256, 256, 256, 1])
+# opacity[mask] = npy_density_data[npy_links[mask]]
 
 ori = np.load("/home/adrian/Documents/temp/svox_ori.npy")
 dir = np.load("/home/adrian/Documents/temp/svox_dir.npy")
@@ -54,23 +54,12 @@ for i in range(len(tmin)):
     tics.append(np.arange(tmin[i], tmax[i], spacing))
 
 for i in range(800*800):
-    i = 65000
+    # i = 65000
     samples = ori[i, None] + tics[i][:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
-    samples_pos = samples.astype(int)
-    links = npy_links[samples_pos[:, 0], samples_pos[:, 1], samples_pos[:, 2]]
-    mask = links >= 0
-    links = links[mask]
-    op = npy_density_data[links]
-    gr = npy_sh_data[links]
-    samples_pos = samples_pos[mask]
-    samples = samples[mask]
-
-    # we just need the nbh of the points in samples, so we need the grid points to be passed in the right way
-
-    sigma = trilinear_interpolation_dot(samples, opacity)
+    sigma = trilinear_interpolation_shuffle(samples, npy_links, npy_density_data)
     sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = trilinear_interpolation_dot(samples, grid)
+    rgb = trilinear_interpolation_shuffle(samples, npy_links, npy_sh_data)
     rgb = rgb.reshape(-1, 3, 9)
     sh_ray = sh[i][None, None, :]
     rgb = rgb * sh_ray
@@ -95,3 +84,5 @@ import cv2
 img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+print("get to here")
