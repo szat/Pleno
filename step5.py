@@ -16,6 +16,11 @@ npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
+# hack
+npy_density_data[0] = 0
+npy_sh_data[0] = 0
+
+
 # mask = npy_links >= 0
 # grid = np.zeros([256, 256, 256, 27])
 # grid[mask] = npy_sh_data[npy_links[mask]]
@@ -57,9 +62,11 @@ for i in range(800*800):
     # i = 65000
     samples = ori[i, None] + tics[i][:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
-    sigma = trilinear_interpolation_shuffle(samples, npy_links, npy_density_data)
+    # sigma = trilinear_interpolation_shuffle(samples, npy_links, npy_density_data)
+    sigma = trilinear_interpolation_shuffle_boundary(samples, npy_links, npy_density_data)
     sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = trilinear_interpolation_shuffle(samples, npy_links, npy_sh_data)
+    # rgb = trilinear_interpolation_shuffle(samples, npy_links, npy_sh_data)
+    rgb = trilinear_interpolation_shuffle_boundary(samples, npy_links, npy_sh_data)
     rgb = rgb.reshape(-1, 3, 9)
     sh_ray = sh[i][None, None, :]
     rgb = rgb * sh_ray
