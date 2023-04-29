@@ -45,22 +45,31 @@ class Renderer:
         npy_sh_data = data['sh_data']
         npy_basis_type = data['basis_type']
 
-        mask = npy_links >= 0
-        npy_links = npy_links[mask]
+        #mask = npy_links >= 0
+        #npy_links = npy_links[mask]
 
-        density_matrix = np.zeros((model_idim, model_idim, model_idim, 1), dtype=np.float32)
-        density_matrix[mask] = npy_density_data[npy_links]
-        density_matrix = np.reshape(density_matrix, (model_idim, model_idim, model_idim))
-        self.density_matrix = torch.from_numpy(density_matrix)
+        # hack
+        npy_density_data[0] = 0
+        npy_sh_data[0] = 0
 
-        sh_matrix = np.zeros((model_idim, model_idim, model_idim, 27), dtype=np.float16)
-        sh_matrix[mask] = npy_sh_data[npy_links]
-        sh_matrix = np.reshape(sh_matrix, (model_idim, model_idim, model_idim, 27))
-        self.sh_matrix = torch.from_numpy(sh_matrix)
+        #density_matrix = np.zeros((model_idim, model_idim, model_idim, 1), dtype=np.float32)
+        #density_matrix[mask] = npy_density_data[npy_links]
+        #density_matrix = np.reshape(density_matrix, (model_idim, model_idim, model_idim))
+        #self.density_matrix = torch.from_numpy(density_matrix)
+        self.density_data = torch.from_numpy(npy_density_data).to(torch.float32)
+
+        #sh_matrix = np.zeros((model_idim, model_idim, model_idim, 27), dtype=np.float16)
+        #sh_matrix[mask] = npy_sh_data[npy_links]
+        #sh_matrix = np.reshape(sh_matrix, (model_idim, model_idim, model_idim, 27))
+        #self.sh_matrix = torch.from_numpy(sh_matrix)
+        self.sh_data = torch.from_numpy(npy_sh_data).to(torch.float16)
+
+        self.links = torch.from_numpy(npy_links).to(torch.long)
 
         self.cameras = load_cameras_from_file(cams_json_path, int(img_size/2), int(img_size/2))
         
-        self.model_rf = RadianceField(idim=model_idim, grid=self.sh_matrix, opacity=self.density_matrix, 
+        self.model_rf = RadianceField(idim=model_idim, links=self.links, 
+                                      grid=self.sh_data, opacity=self.density_data, 
                                       nb_sh_channels=nb_sh_channels, nb_samples=nb_samples,
                                       delta_voxel=2/torch.tensor([model_idim, model_idim, model_idim],
                                                                   dtype=torch.float),
@@ -116,10 +125,10 @@ if __name__ == "__main__":
     path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
     cams_json_path = "/home/diego/data/nerf/nerf_synthetic/nerf_synthetic/lego/transforms_train.json"
 
-    renderer = Renderer(path_to_weigths, model_name, cams_json_path)
+    renderer = Renderer(path_to_weigths, model_name, cams_json_path, device="cuda", model_idim=512)
     for camera in renderer.cameras:
         print(f"rendering camera {camera.camera_name} ..")
         img = renderer.render_img(camera)
-        cv2.imwrite(f"{model_name}__imgsz{renderer.img_size}_s{renderer.nb_samples}_" + \
-                    "idim{renderer.model_idim}_dev{renderer.device}.png", img)
+        cv2.imwrite(f"./renders/{model_name}__imgsz{renderer.img_size}_s{renderer.nb_samples}_" + \
+                    f"idim{renderer.model_idim}_dev{renderer.device}_rot{camera.camera_name}.png", img)
 
