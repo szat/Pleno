@@ -20,6 +20,7 @@ npy_basis_type = data['basis_type']
 npy_density_data[0] = 0
 npy_sh_data[0] = 0
 npy_links[npy_links < 0] = 0
+npy_data = np.hstack([npy_density_data, npy_sh_data])
 
 ori = np.load("/home/adrian/Documents/temp/svox_ori.npy")
 dir = np.load("/home/adrian/Documents/temp/svox_dir.npy")
@@ -47,21 +48,28 @@ dir = dir[mask]
 sh = sh[mask]
 tmin = tmin[mask]
 tmax = tmax[mask]
-tics = []
+
 colors = np.zeros([800*800, 3])
-for i in range(len(tmin)):
-    tics.append(np.arange(tmin[i], tmax[i], spacing))
+max_dt = np.max(tmax - tmin)
+
+# for i in range(len(tmin)):
+#     tics.append(np.linspace(tmin[i], tmax[i], nb))
+#     tics.append(np.arange(tmin[i], tmax[i], spacing))
 
 for i in range(800*800):
     # i = 65000
-    samples = ori[i, None] + tics[i][:, None] * dir[i, None]
+    x = max_dt + tmin[i] - tmax[i]
+    tics = np.arange(tmin[i], tmax[i] + x, spacing)
+    print(len(tics))
+    samples = ori[i, None] + tics[:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
-    # sigma = trilinear_interpolation_shuffle(samples, npy_links, npy_density_data)
-    sigma = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_density_data)
+    interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+
     sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    # rgb = trilinear_interpolation_shuffle(samples, npy_links, npy_sh_data)
-    rgb = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_sh_data)
     rgb = rgb.reshape(-1, 3, 9)
+
     sh_ray = sh[i][None, None, :]
     rgb = rgb * sh_ray
     rgb = np.sum(rgb, axis=2)
@@ -76,7 +84,6 @@ for i in range(800*800):
     rgb = coefs * rgb
     rgb = np.sum(rgb, axis=0)
     colors[i] = rgb
-    print(i)
 
 img = colors.reshape([800,800,3])
 import cv2
