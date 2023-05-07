@@ -67,7 +67,8 @@ class RadianceField(torch.nn.Module):
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
         if links is None:
-            self.links = torch.zeros((idim, idim, idim), dytpe=torch.long, device=self.device) - 1
+            self.links = torch.zeros((idim, idim, idim), device=self.device) - 1
+            self.links = self.links.to(torch.long)
         else:
             self.links = links.to(self.device)
         if grid is None:
@@ -207,14 +208,17 @@ class RadianceField(torch.nn.Module):
     def train_step(self,
                    train_origins: torch.Tensor,
                    train_dirs: torch.Tensor,
-                   train_colors: torch.Tensor,
-                   voxels_ijk_tv: torch.Tensor):
+                   train_tmin: torch.Tensor,
+                   train_tmax: torch.Tensor,
+                   train_colors: torch.Tensor):
+                   #voxels_ijk_tv: torch.Tensor):
 
-        batch_size = train_origins.shape[0]
-        pred_colors = self.forward(train_colors, train_dirs)
-        assert batch_size == pred_colors.shape[0]
-        tv_harmonics, tv_opacity = self.total_variation(voxels_ijk_tv)
-        loss = self.criterion(pred_colors, train_colors) + self.w_tv_harms * tv_harmonics + self.w_tv_opacity * tv_opacity
         self.optimizer.zero_grad() # reset grad
+        batch_size = train_origins.shape[0]
+        pred_colors, _ = self.forward(train_origins, train_dirs, train_tmin, train_tmax)
+        assert batch_size == pred_colors.shape[0]
+        #tv_harmonics, tv_opacity = self.total_variation(voxels_ijk_tv)
+        loss = self.criterion(pred_colors, train_colors)
         loss.backward() # back propagate
         self.optimizer.step() # update weights
+        return loss

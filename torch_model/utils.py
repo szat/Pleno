@@ -1,5 +1,9 @@
 from typing import Tuple
+
+import numpy as np
 import torch
+
+from sampling_branch import intersect_ray_aabb 
 
 
 def build_samples(ray_origins: torch.Tensor,
@@ -20,6 +24,24 @@ def build_samples(ray_origins: torch.Tensor,
     sample_vecs = ray_origins + samples * ray_dir_vecs
 
     return sample_vecs
+
+
+def validate_and_find_ray_intersecs(rays_dirs: np.ndarray, rays_origins: np.ndarray):
+    """
+    finds rays intersections with model cube and choose valid ones
+    """
+
+    box_min = -np.ones(rays_origins.shape) * 0.99
+    box_max = np.ones(rays_origins.shape) * 0.99
+    ray_inv_dirs = 1. / rays_dirs
+    tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
+    mask = tmin < tmax
+    valid_rays_origins = torch.from_numpy(rays_origins[mask])
+    valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
+    valid_tmin = torch.from_numpy(tmin[mask])
+    valid_tmax = torch.from_numpy(tmax[mask])
+    return valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax
+        
 
 
 def eval_sh_bases(dirs: torch.Tensor,

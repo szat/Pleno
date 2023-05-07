@@ -8,8 +8,8 @@ import numpy as np
 import torch
 
 from camera import Camera, load_cameras_from_file
-from sampling_branch import intersect_ray_aabb 
 from model import RadianceField
+from utils import validate_and_find_ray_intersecs
 
 
 class Renderer:
@@ -82,16 +82,8 @@ class Renderer:
         rays_origins = rays_origins.astype(np.float32)
         rays_dirs = rays_dirs.astype(np.float32)
 
-        # find rays intersections with model cube and choose valid ones:
-        box_min = -np.ones(rays_origins.shape) * 0.99
-        box_max = np.ones(rays_origins.shape) * 0.99
-        ray_inv_dirs = 1. / rays_dirs
-        tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
-        mask = tmin < tmax
-        valid_rays_origins = torch.from_numpy(rays_origins[mask])
-        valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
-        valid_tmin = torch.from_numpy(tmin[mask])
-        valid_tmax = torch.from_numpy(tmax[mask])
+        valid_rays_origins, valid_rays_dirs, \
+                valid_tmin, valid_tmax = validate_and_find_ray_intersecs(rays_dirs, rays_origins)
         
         # invoke randiance field model:
         torch.cuda.empty_cache()
@@ -129,6 +121,6 @@ if __name__ == "__main__":
     for camera in renderer.cameras:
         print(f"rendering camera {camera.camera_name} ..")
         img = renderer.render_img(camera)
-        cv2.imwrite(f"./renders/{model_name}__imgsz{renderer.img_size}_s{renderer.nb_samples}_" + \
-                    f"idim{renderer.model_idim}_dev{renderer.device}_rot{camera.camera_name}.png", img)
+        cv2.imwrite(f"./renders/{model_name}_imgsz{renderer.img_size}_s{renderer.nb_samples}_" + \
+                    f"idim{renderer.model_idim}_dev{renderer.device}_{camera.camera_name}.png", img)
 
