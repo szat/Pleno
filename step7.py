@@ -157,50 +157,64 @@ dir = dir[mask]
 sh = sh[mask]
 tmin = tmin[mask]
 tmax = tmax[mask]
-max_dt = np.max(tmax-tmin)
-tmp = np.arange(0, max_dt, spacing)
-colors = np.zeros([800*800, 3])
-nb = len(tmp)
-tics = np.zeros([len(tmin), nb])
-for i in range(len(tmin)):
-    tmp = np.arange(tmin[i], tmax[i] + max_dt - (tmax[i] - tmin[i]), spacing)
 
-    dt = dt / spacing
-    tmp = np.arange(tmin[i], tmax[i], spacing)
-    tics.append(np.arange(tmin[i], tmax[i], spacing))
-    tics[i] = np.linspace(tmin[i], tmax[i], nb)
+mask = tmin < tmax
+ori = ori[mask]
+dir = dir[mask]
+sh = sh[mask]
+tmin = tmin[mask]
+tmax = tmax[mask]
+max_dt = np.max(tmax - tmin)
+nb = len(np.arange(tmin[0], max_dt + tmin[0], spacing))
+tics = np.zeros([len(tmin), nb])
+template = np.arange(tmin[0], max_dt + tmin[0], spacing)
+for i in range(len(tics)):
+    tics[i] = np.arange(tmin[i], max_dt + tmin[i], spacing)
 
 sh = jnp.array(sh)
 ori = jnp.array(ori)
 dir = jnp.array(dir)
-tics = jnp.array(tics)
+tmin = jnp.array(tmin)
+tmax = jnp.array(tmax)
 
-def get_color(ori, dir, tics):
-    ori = ori.reshape([1, 3])
-    dir = dir.reshape([1, 3])
-    tics = tics.reshape([nb, 1])
-    samples = ori + tics * dir
-    samples = jnp.clip(samples, 0, 254)
-    interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
-    sigma = interp[:, :1]
-    rgb = interp[:, 1:]
-
-    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = rgb.reshape(-1, 3, 9)
-    sh_ray = sh[i][None, None, :]
-    tmp_rgb = jnp.clip(jnp.sum(rgb * sh_ray, axis=2) + 0.5, a_min=0.0, a_max=100000)
-    tmp = spacing * sigma * delta_scale
-    var = 1 - np.exp(-tmp)
-    Ti = jnp.exp(jnp.cumsum(-tmp))
-    Ti = Ti[:, None]
-    coefs = Ti * var
-    return jnp.sum(coefs * tmp_rgb, axis=0)
+colors = jnp.zeros([800*800, 3])
+tmin = tmin[:, jnp.newaxis]
+inputs = jnp.hstack([ori, dir, tmin, sh])
+# def get_color(ori, dir, tmin, sh):
 
 @jit
-def vmap_get_color(v_ori, v_dir, v_tics):
-    return vmap(get_color)(v_ori, v_dir, v_tics)
+def get_color(inputs):
+    ori = inputs[:3]
+    dir = inputs[3:6]
+    tmin = inputs[6:7]
+    sh = inputs[7:]
+    ori = ori.reshape([1, 3])
+    dir = dir.reshape([1, 3])
+    tics = jnp.arange(tmin, max_dt + tmin, spacing)
+    # tics = tics[:, jnp.newaxis]
+    # samples = ori + tics * dir
+    # samples = jnp.clip(samples, 0, 254)
+    # interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
+    # sigma = interp[:, :1]
+    # rgb = interp[:, 1:]
+    #
+    # sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+    # rgb = rgb.reshape(-1, 3, 9)
+    # sh = sh[jnp.newaxis, jnp.newaxis, :]
+    # tmp_rgb = jnp.clip(jnp.sum(rgb * sh, axis=2) + 0.5, a_min=0.0, a_max=100000)
+    # tmp = spacing * sigma * delta_scale
+    # var = 1 - jnp.exp(-tmp)
+    # Ti = jnp.exp(jnp.cumsum(-tmp))
+    # Ti = Ti[:, jnp.newaxis]
+    # coefs = Ti * var
+    # out = jnp.sum(coefs * tmp_rgb, axis=0)
+    # return out
+    return tics
 
+def vmap_get_color(v_ori, v_dir, v_tmin, v_sh):
+    return vmap(get_color)(v_ori, v_dir, v_tmin, v_sh)
 
+res = vmap_get_color(ori, dir, tmin, sh)
 
 
 for i in range(800*800):
