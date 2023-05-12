@@ -28,14 +28,17 @@ npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']
 
+# repack with half grid
+# npy_links = npy_links[::2, ::2, ::2]
+
 # hack
 npy_density_data[0] = 0
 npy_sh_data[0] = 0
 npy_links[npy_links < 0] = 0
 npy_data = np.hstack([npy_density_data, npy_sh_data])
 
-ori = np.load("/home/adrian/Documents/temp/svox_ori.npy")
-dir = np.load("/home/adrian/Documents/temp/svox_dir.npy")
+ori = np.load("/home/adrian/Documents/temp/svox_ori.npy").astype(np.float16)
+dir = np.load("/home/adrian/Documents/temp/svox_dir.npy").astype(np.float16)
 
 # transform to world coords
 step_size = 0.5
@@ -63,41 +66,26 @@ tmax = tmax[mask]
 
 colors = np.zeros([800*800, 3])
 max_dt = np.max(tmax - tmin)
-
-# for i in range(len(tmin)):
-#     tics.append(np.linspace(tmin[i], tmax[i], nb))
-#     tics.append(np.arange(tmin[i], tmax[i], spacing))
-
-# t0 = time()
-# for i in range(800*800):
-#     # i = 65000
-#     x = max_dt + tmin[i] - tmax[i]
-#     tics = np.arange(tmin[i], tmax[i] + x, spacing)
-#     samples = ori[i, None] + tics[:, None] * dir[i, None]
-#     samples = np.clip(samples, 0, 254)
-#     # interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
-# t1 = time()
-# print(t1 - t0)
-
-
 nb = int(np.ceil(max_dt/spacing))
 tmp_tics = np.linspace(0, 1, nb)
-samples_list = []
-weights_list = []
-coeff_list = []
-l000_list = []
-for i in range(1000):
-    # i = 65000
-    # x = max_dt + tmin[i] - tmax[i]
-    # tics = np.arange(tmin[i], tmax[i] + x, spacing)
-    tics = tmin[i] + tmp_tics * (tmax[i] - tmin[i])
 
-    print(len(tics))
+list_samples = []
+list_l000 = []
+list_v000 = []
+list_w = []
+list_c = []
+list_interp = []
+list_colors = []
+list_sh = []
+list_tmpZ = []
+list_zd = []
+iter_range = np.arange(800*800)
+for i in iter_range[::500]:
+    tics = tmin[i] + tmp_tics * (tmax[i] - tmin[i])
     samples = ori[i, None] + tics[:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
-    samples_list.append(samples)
+    list_samples.append(samples)
     # interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
-
     ###
     vecs = samples
     values_compressed = npy_data
@@ -122,7 +110,7 @@ for i in range(1000):
     x0, y0, z0 = xyz_floor[:, 0], xyz_floor[:, 1], xyz_floor[:, 2]
 
     l000 = links[x0, y0, z0]
-
+    list_l000.append(l000)
     l100 = links[x0+1, y0, z0]
     l010 = links[x0, y0+1, z0]
     l001 = links[x0, y0, z0+1]
@@ -132,6 +120,7 @@ for i in range(1000):
     l111 = links[x0+1, y0+1, z0+1]
 
     v000 = values_compressed[l000]
+    list_v000.append(v000)
     v100 = values_compressed[l100]
     v010 = values_compressed[l010]
     v001 = values_compressed[l001]
@@ -148,9 +137,11 @@ for i in range(1000):
     a010 = tmpX * yd
     a110 = xd * yd
     weights = np.array([a000, a010, a100, a110])
-    weights_list.append(weights)
+    list_w.append(weights)
     coeff = np.array([v000, v001, v010, v011, v100, v101, v110, v111])
-    coeff_list.append(coeff)
+    list_c.append(coeff)
+    list_tmpZ.append(tmpZ)
+    list_zd.append(zd)
     weights = weights[:, :, None]
     if tmpZ.ndim == 1 and zd.ndim == 1:
         tmpZ = tmpZ[:, None]
@@ -159,6 +150,7 @@ for i in range(1000):
     out = np.sum(weights * coeff[[0, 2, 4, 6]], axis=0) * tmpZ + np.sum(weights * coeff[[1, 3, 5, 7]], axis=0) * zd
     interp = out
     ###
+    list_interp.append(interp)
 
     sigma = interp[:, :1]
     rgb = interp[:, 1:]
@@ -167,6 +159,7 @@ for i in range(1000):
     rgb = rgb.reshape(-1, 3, 9)
 
     sh_ray = sh[i][None, None, :]
+    list_sh.append(sh_ray)
     rgb = rgb * sh_ray
     rgb = np.sum(rgb, axis=2)
     rgb = rgb + 0.5 #correction 1
@@ -180,18 +173,62 @@ for i in range(1000):
     rgb = coefs * rgb
     rgb = np.sum(rgb, axis=0)
     colors[i] = rgb
+    list_colors.append(rgb)
     print(i)
 
-img = colors.reshape([800,800,3])
-import cv2
-# if nb_sh_channels == 2:
-#     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
-img = (img * 255).astype(np.uint8)
-# if nb_sh_channels == 3:
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+sh = jnp.array(sh)
+list_colors_jax = []
+for i in range(len(list_interp)):
+    weights = jnp.array(list_w[i])
+    coeff = jnp.array(list_c[i])
+    tmpZ = jnp.array(list_tmpZ[i])
+    zd = jnp.array(list_zd[i])
+
+    weights = jnp.expand_dims(weights, 2)
+    tmpZ = jnp.expand_dims(tmpZ, 1)
+    zd = jnp.expand_dims(zd, 1)
+
+    out = jnp.sum(weights * coeff[jnp.array([0, 2, 4, 6])], axis=0) * tmpZ + jnp.sum(
+        weights * coeff[jnp.array([1, 3, 5, 7])], axis=0) * zd
+
+    interp = out
+    # interp = jnp.array(list_interp[i])
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+    rgb = rgb.reshape(-1, 3, 9)
+    # sh_ray = sh[None, :]
+    sh_ray = jnp.array(list_sh[i])
+    rgb = rgb * sh_ray
+    rgb_ = jnp.sum(rgb, axis=2)
+    rgb_ = rgb_ + 0.5 #correction 1
+    rgb_ = jnp.clip(rgb_, a_min=0.0, a_max=100000)
+    tmp = step_size * sigma * delta_scale
+    # tmp = np.clip(tmp, a_min=0.0, a_max=100000)
+    var = 1 - jnp.exp(-tmp)
+    Ti = jnp.exp(jnp.cumsum(-tmp))
+    Ti = Ti[:, None]
+    coefs = Ti * var
+    rgb_ = coefs * rgb_
+    rgb_ = jnp.sum(rgb_, axis=0)
+    list_colors_jax.append(rgb_)
+
+tmp_np = np.concatenate(list_colors)
+tmp_jax = jnp.concatenate(list_colors_jax)
+np.testing.assert_allclose(tmp_np, tmp_jax)
 
 
-nb = int(np.ceil(max_dt/spacing))
+
+
+# img = colors.reshape([800,800,3])
+# import cv2
+# # if nb_sh_channels == 2:
+# #     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
+# img = (img * 255).astype(np.uint8)
+# # if nb_sh_channels == 3:
+# img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
 tmin = tmin[:, None]
 tmax = tmax[:, None]
 ori = jnp.array(ori)
