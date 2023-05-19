@@ -123,7 +123,7 @@ for i in iter_range:
     rgb = np.sum(rgb, axis=0)
     list_colors.append(rgb)
 
-
+@jit
 def jax_it(ori, dir, tmin, tmax, links, data, sh, tics):
     samples = samples_jax(ori, dir, tmin, tmax, tics)
     interp = vmap(trilinear_jax, in_axes=(0, None, None))(samples, links, data)
@@ -172,7 +172,7 @@ for i in range(800*800):
     print(i)
 
 
-batch_size = 2000
+batch_size = 5000
 total_size = 800*800
 res = []
 i = 1
@@ -211,3 +211,4 @@ import cv2
 img = (img * 255).astype(np.uint8)
 # if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
