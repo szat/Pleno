@@ -17,14 +17,16 @@ class RadianceField(torch.nn.Module):
                  idim: int,
                  nb_sh_channels: int, 
                  nb_samples: int,
-                 links: torch.Tensor = None,
                  opacity: torch.Tensor = None,
                  grid: torch.Tensor = None,
                  delta_voxel: torch.Tensor=torch.tensor([1, 1, 1], dtype=torch.float),
                  w_tv_harms: float = 1,
                  w_tv_opacity: float = 1,
+                 opt_lr: float = 0.05,
+                 opt_momentum: float = 0.99,
                  device: str = None):
-        super().__init__()
+
+        super(RadianceField, self).__init__()
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         else:
@@ -66,22 +68,17 @@ class RadianceField(torch.nn.Module):
         self.nb_sh_channels = nb_sh_channels
         self.w_tv_harms = w_tv_harms
         self.w_tv_opacity = w_tv_opacity
-        if links is None:
-            self.links = torch.zeros((idim, idim, idim), device=self.device) - 1
-            self.links = self.links.to(torch.long)
-        else:
-            self.links = links.to(self.device)
         if grid is None:
-            self.grid = torch.nn.Parameter(torch.rand((idim*idim*idim, 9*nb_sh_channels), device=self.device))
+            self.grid = torch.nn.Parameter(torch.rand((idim, idim, idim, 9*nb_sh_channels), device=self.device))
         else:
             self.grid = torch.nn.Parameter(grid.to(self.device))
         if opacity is None:
-            self.opacity = torch.nn.Parameter(torch.rand((idim*idim*idim, 1), device=self.device))
+            self.opacity = torch.nn.Parameter(torch.rand((idim, idim, idim, 1), device=self.device))
         else:
             self.opacity = torch.nn.Parameter(opacity.to(self.device))
         self.box_min = - 2 / self.delta_voxel / idim
         self.criterion = torch.nn.MSELoss(reduction='mean')
-        self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
+        self.optimizer = torch.optim.RMSprop(self.parameters(), lr=opt_lr, momentum=opt_momentum)
 
     def forward(self, x: torch.Tensor, d: torch.Tensor, tmin: torch.Tensor, tmax: torch.Tensor) -> torch.Tensor:
         """
@@ -101,8 +98,10 @@ class RadianceField(torch.nn.Module):
 
         sample_points = torch.flatten(sample_points, 0, 1)
 
-        interp_sh_coeffs = trilinear_interpolation_shuffle(sample_points, self.links, self.grid, self.box_min, self.delta_voxel)
-        interp_opacities = trilinear_interpolation_shuffle(sample_points, self.links, self.opacity, self.box_min, self.delta_voxel)
+        #interp_sh_coeffs = trilinear_interpolation_shuffle(sample_points, self.links, self.grid, self.box_min, self.delta_voxel)
+        interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
+        #interp_opacities = trilinear_interpolation_shuffle(sample_points, self.links, self.opacity, self.box_min, self.delta_voxel)
+        interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
         interp_opacities = torch.relu(interp_opacities)
 
         # nb_rays x nb_samples x nb_channels*num_sh

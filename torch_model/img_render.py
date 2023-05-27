@@ -14,6 +14,7 @@ from utils import validate_and_find_ray_intersecs
 
 class Renderer:
     def __init__(self,
+                 repo_ckpt_path: str,
                  path_to_weights: str,
                  model_name: str,
                  cams_json_path: str,
@@ -24,7 +25,6 @@ class Renderer:
                  model_idim: int = 256,
                  device: str = "cuda"):
 
-        self.path_to_weigths = path_to_weights
         self.model_name = model_name
         self.cams_json_path = cams_json_path
         self.img_size = img_size
@@ -34,46 +34,56 @@ class Renderer:
         self.model_idim = model_idim
         self.device = device
 
-        # Access data arrays using keys
-        data = np.load(path_to_weigths, allow_pickle=True)
-        npy_radius = data['radius']
-        npy_center = data['center']
-        npy_links = data['links']
-        if model_idim == 256:
-            npy_links = npy_links[::2, ::2, ::2] # reduce resolution to half
-        npy_density_data = data['density_data']
-        npy_sh_data = data['sh_data']
-        npy_basis_type = data['basis_type']
+        if repo_ckpt_path is not None:
+            self.model_rf = RadianceField(idim=model_idim, nb_sh_channels=nb_sh_channels, nb_samples=nb_samples,
+                                          delta_voxel=2/torch.tensor([model_idim, model_idim, model_idim],
+                                                                      dtype=torch.float),
+                                          device=device)
+            checkpoint = torch.load(repo_ckpt_path)
+            self.model_rf.load_state_dict(checkpoint['model_state_dict'])
+        else: 
+            # Access data arrays using keys
+            data = np.load(path_to_svox_weigths, allow_pickle=True)
+            npy_radius = data['radius']
+            npy_center = data['center']
+            npy_links = data['links']
+            if model_idim < 512:
+                assert 512 % model_idim == 0
+                stride = int(512 / model_idim)
+                npy_links = npy_links[::stride, ::stride, ::stride] # reduce resolution to half
+            npy_density_data = data['density_data']
+            npy_sh_data = data['sh_data']
+            npy_basis_type = data['basis_type']
 
-        #mask = npy_links >= 0
-        #npy_links = npy_links[mask]
+            mask = npy_links >= 0
+            npy_links = npy_links[mask]
 
-        # hack
-        npy_density_data[0] = 0
-        npy_sh_data[0] = 0
+            # hack
+            npy_density_data[0] = 0
+            npy_sh_data[0] = 0
 
-        #density_matrix = np.zeros((model_idim, model_idim, model_idim, 1), dtype=np.float32)
-        #density_matrix[mask] = npy_density_data[npy_links]
-        #density_matrix = np.reshape(density_matrix, (model_idim, model_idim, model_idim))
-        #self.density_matrix = torch.from_numpy(density_matrix)
-        self.density_data = torch.from_numpy(npy_density_data).to(torch.float32)
+            density_matrix = np.zeros((model_idim, model_idim, model_idim, 1), dtype=np.float32)
+            density_matrix[mask] = npy_density_data[npy_links]
+            density_matrix = np.reshape(density_matrix, (model_idim, model_idim, model_idim))
+            self.density_matrix = torch.from_numpy(density_matrix)
+            self.density_matrix = self.density_matrix.unsqueeze(-1)
+            #self.density_data = torch.from_numpy(npy_density_data).to(torch.float32)
 
-        #sh_matrix = np.zeros((model_idim, model_idim, model_idim, 27), dtype=np.float16)
-        #sh_matrix[mask] = npy_sh_data[npy_links]
-        #sh_matrix = np.reshape(sh_matrix, (model_idim, model_idim, model_idim, 27))
-        #self.sh_matrix = torch.from_numpy(sh_matrix)
-        self.sh_data = torch.from_numpy(npy_sh_data).to(torch.float16)
+            sh_matrix = np.zeros((model_idim, model_idim, model_idim, 27), dtype=np.float16)
+            sh_matrix[mask] = npy_sh_data[npy_links]
+            sh_matrix = np.reshape(sh_matrix, (model_idim, model_idim, model_idim, 27))
+            self.sh_matrix = torch.from_numpy(sh_matrix)
+            #self.sh_data = torch.from_numpy(npy_sh_data).to(torch.float16)
 
-        self.links = torch.from_numpy(npy_links).to(torch.long)
-
+            #self.links = torch.from_numpy(npy_links).to(torch.long)
+            
+            self.model_rf = RadianceField(idim=model_idim, grid=self.sh_matrix, opacity=self.density_matrix, 
+                                          nb_sh_channels=nb_sh_channels, nb_samples=nb_samples,
+                                          delta_voxel=2/torch.tensor([model_idim, model_idim, model_idim],
+                                                                      dtype=torch.float),
+                                          device=device)
+        self.model_rf.eval()
         self.cameras = load_cameras_from_file(cams_json_path, int(img_size/2), int(img_size/2))
-        
-        self.model_rf = RadianceField(idim=model_idim, links=self.links, 
-                                      grid=self.sh_data, opacity=self.density_data, 
-                                      nb_sh_channels=nb_sh_channels, nb_samples=nb_samples,
-                                      delta_voxel=2/torch.tensor([model_idim, model_idim, model_idim],
-                                                                  dtype=torch.float),
-                                      device=device)
         print("model is loaded!")
 
     def render_img(self, camera: Camera):
@@ -83,7 +93,7 @@ class Renderer:
         rays_dirs = rays_dirs.astype(np.float32)
 
         valid_rays_origins, valid_rays_dirs, \
-                valid_tmin, valid_tmax = validate_and_find_ray_intersecs(rays_dirs, rays_origins)
+                valid_tmin, valid_tmax, mask = validate_and_find_ray_intersecs(rays_dirs, rays_origins)
         
         # invoke randiance field model:
         torch.cuda.empty_cache()
@@ -114,10 +124,12 @@ class Renderer:
 
 if __name__ == "__main__":
     model_name = "lego"
-    path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+    path_to_svox_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
+    repo_ckpt_path = f"/home/diego/repos/Pleno/weights/model_7.pt"
     cams_json_path = "/home/diego/data/nerf/nerf_synthetic/nerf_synthetic/lego/transforms_train.json"
 
-    renderer = Renderer(path_to_weigths, model_name, cams_json_path, device="cuda", model_idim=512)
+    #renderer = Renderer(None, path_to_svox_weigths, model_name, cams_json_path, device="cpu", model_idim=16)
+    renderer = Renderer(repo_ckpt_path, None, model_name, cams_json_path, device="cpu", model_idim=16)
     for camera in renderer.cameras:
         print(f"rendering camera {camera.camera_name} ..")
         img = renderer.render_img(camera)

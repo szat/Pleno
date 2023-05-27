@@ -10,15 +10,15 @@ class RadianceFieldOptions:
         self.parser.add_argument("--out_weights_path",
                                  type=str,
                                  help="path to output folder for weights",
-                                 default=None)
+                                 default="/home/diego/repos/Pleno/weights/")
         self.parser.add_argument("--cams_json_path",
                                  type=str,
                                  help="path to input json file for camera rotations",
-                                 default=None)
+                                 default="/home/diego/data/nerf/nerf_synthetic/nerf_synthetic/lego/transforms_train.json")
         self.parser.add_argument("--imgs_folder_path",
                                  type=str,
                                  help="path to input images for camera rotations",
-                                 default=None)
+                                 default="/home/diego/data/nerf/nerf_synthetic/nerf_synthetic/lego/train/")
         self.parser.add_argument("--img_ext",
                                  type=str,
                                  help="image file extension",
@@ -28,11 +28,11 @@ class RadianceFieldOptions:
         self.parser.add_argument("--batch_size",
                                  type=int,
                                  help="batch size",
-                                 default=512)
+                                 default=2048*64)
         self.parser.add_argument("--nb_samples",
                                  type=int,
                                  help="numer of samples for ray marching",
-                                 default=512)
+                                 default=128)
         self.parser.add_argument("--max_epochs",
                                  type=int,
                                  help="max. train epochs",
@@ -44,7 +44,7 @@ class RadianceFieldOptions:
         self.parser.add_argument("--idim",
                                  type=int,
                                  help="resolution of model",
-                                 default=512)
+                                 default=16)
         self.parser.add_argument("--img_width",
                                  type=int,
                                  help="target image width",
@@ -53,6 +53,15 @@ class RadianceFieldOptions:
                                  type=int,
                                  help="target image height",
                                  default=800)
+        # optimizer options:
+        self.parser.add_argument("--opt_lr",
+                                 type=float,
+                                 help="optimizer lr",
+                                 default=0.05)
+        self.parser.add_argument("--opt_momentum",
+                                 type=float,
+                                 help="optimizer momentum",
+                                 default=0.99)
 
     def parse(self):
         self.options = self.parser.parse_args()

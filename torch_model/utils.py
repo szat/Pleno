@@ -40,7 +40,7 @@ def validate_and_find_ray_intersecs(rays_dirs: np.ndarray, rays_origins: np.ndar
     valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
     valid_tmin = torch.from_numpy(tmin[mask])
     valid_tmax = torch.from_numpy(tmax[mask])
-    return valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax
+    return valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, mask
         
 
 
@@ -110,8 +110,8 @@ def trilinear_interpolation(vecs: torch.Tensor,
                          values[x0 + 1, y0, z0], values[x0 + 1, y0, z0 + 1],
                          values[x0 + 1, y0 + 1, z0], values[x0 + 1, y0 + 1, z0 + 1]])
 
-    tmpZ = tmpZ.unsqueeze(0).unsqueeze(-1)
-    zd = zd.unsqueeze(0).unsqueeze(-1)
+    tmpZ = tmpZ.unsqueeze(-1)
+    zd = zd.unsqueeze(-1)
 
     inter_values = torch.sum(weights * coeff[[0, 2, 4, 6]], dim=0) * tmpZ + \
                    torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
@@ -204,7 +204,7 @@ def trilinear_interpolation_shuffle(vecs: torch.Tensor,
                    torch.sum(weights * coeff[[1, 3, 5, 7]], dim=0) * zd
 
     res = torch.zeros((vecs.shape[0], values_compressed.shape[1]),
-                      dtype=torch.float64,  
+                      dtype=weights.dtype,  
                       device=values_compressed.device)
     res[mask] = inter_values
     return res

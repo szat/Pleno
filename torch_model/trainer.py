@@ -20,6 +20,7 @@ class Trainer:
         self.ray_dirs, self.ray_origins = [], []
         self.ray_tmin, self.ray_tmax = [], []
         self.rgb_colors = []
+        total_nb_rays = 0
         for cam in self.cameras:
             img_path = os.path.join(self.opts.imgs_folder_path, cam.camera_name + "." + self.opts.img_ext)
             img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED) # keep alpha channel
@@ -33,21 +34,26 @@ class Trainer:
             mask = img[:, 3] > 0
 
             valid_rays_origins, valid_rays_dirs, \
-                    valid_tmin, valid_tmax = validate_and_find_ray_intersecs(cam_ray_dirs[mask],
-                                                                             cam_ray_origins[mask])
+                    valid_tmin, valid_tmax, _ = validate_and_find_ray_intersecs(cam_ray_dirs[mask],
+                                                                                   cam_ray_origins[mask])
             self.ray_dirs.append(valid_rays_dirs)
             self.ray_origins.append(valid_rays_origins)
             self.ray_tmin.append(valid_tmin)
             self.ray_tmax.append(valid_tmax)
             self.rgb_colors.append(img[mask, 0:3])
+            total_nb_rays += valid_rays_dirs.shape[0]
 
-        self.ray_dirs = torch.Tensor(np.concatenate(self.ray_dirs))
-        self.ray_origins = torch.Tensor(np.concatenate(self.ray_origins))
-        self.ray_tmin = torch.Tensor(np.concatenate(self.ray_tmin))
-        self.ray_tmax = torch.Tensor(np.concatenate(self.ray_tmax))
-        self.rgb_colors = torch.Tensor(np.concatenate(self.rgb_colors))
+        print(f"total number of train rays {total_nb_rays}")
+        suffle_idxs = torch.randperm(total_nb_rays)
+        self.ray_dirs = torch.Tensor(np.concatenate(self.ray_dirs))[suffle_idxs]
+        self.ray_origins = torch.Tensor(np.concatenate(self.ray_origins))[suffle_idxs]
+        self.ray_tmin = torch.Tensor(np.concatenate(self.ray_tmin))[suffle_idxs]
+        self.ray_tmax = torch.Tensor(np.concatenate(self.ray_tmax))[suffle_idxs]
+        self.rgb_colors = torch.Tensor(np.concatenate(self.rgb_colors))[suffle_idxs]
         self.radiance_field = RadianceField(idim=self.opts.idim, nb_sh_channels=3,
-                                            nb_samples=self.opts.nb_samples,device=self.opts.device)
+                                            nb_samples=self.opts.nb_samples,
+                                            opt_lr=self.opts.opt_lr, opt_momentum=self.opts.opt_momentum,
+                                            device=self.opts.device)
         
     def train_one_epoch(self, epoch_index, tb_writer):
         running_loss = 0.
@@ -83,10 +89,17 @@ class Trainer:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         writer = SummaryWriter('runs/fashion_trainer_{}'.format(timestamp))
         epoch_number = 0
-        self.radiance_field.train(True)
         for epoch in range(self.opts.max_epochs):
             print('EPOCH {}:'.format(epoch_number + 1))
-            avg_loss = train_one_epoch(epoch_number, writer)
+            self.radiance_field.train(True)
+            avg_loss = self.train_one_epoch(epoch_number, writer)
             writer.flush()
+
+            torch.save({
+                'epoch': epoch_number,
+                'model_state_dict': self.radiance_field.state_dict(),
+                'optimizer_state_dict': self.radiance_field.optimizer.state_dict(),
+                'loss': avg_loss,
+                }, os.path.join(self.opts.out_weights_path, f"model_{epoch_number}.pt"))
+
             epoch_number += 1
-    
