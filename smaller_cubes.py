@@ -159,7 +159,7 @@ def filter_over_sphere(grid, center, radius):
     return mask
 
 
-def viz_mipmap(mipmap, level, total_width):
+def viz_mipmap(mipmap, level, total_width, ray_ori = np.zeros(3), ray_end = np.ones(3)*256, touched = []):
     import open3d as o3d
     import open3d.visualization as vis
     import numpy as np
@@ -195,7 +195,26 @@ def viz_mipmap(mipmap, level, total_width):
                     name = 'box_'+str(i)+'_'+str(j)+'_'+str(k)
                     geoms.append({'name':name, 'geometry':box, 'material':mat_box})
 
-    line = create_line(np.zeros(3), np.ones(3)*256)
+    for i in range(len(touched)):
+        ori = cube_touched[i]
+        box = o3d.geometry.TriangleMesh.create_box(box_width, box_width, box_width)
+        box.translate(ori * box_width)
+        box.compute_triangle_normals()
+        mat_box = vis.rendering.MaterialRecord()
+        mat_box.shader = 'defaultLitTransparency'
+        occ = 1
+        mat_box.base_color = [1, 0, 0, occ]
+        mat_box.base_roughness = 1.0
+        mat_box.base_reflectance = 0.0
+        mat_box.base_clearcoat = 1.0
+        mat_box.thickness = 1.0
+        mat_box.transmission = 0.5
+        mat_box.absorption_distance = 10
+        mat_box.absorption_color = [1, 0, 0]
+        name = 'box_touch' + str(i) + '_' + str(j) + '_' + str(k)
+        geoms.append({'name': name, 'geometry': box, 'material': mat_box})
+
+    line = create_line(ray_ori, ray_end)
     geoms.append({'name': 'bbox', 'geometry': bbox})
     geoms.append({'name': 'line', 'geometry': line})
     return geoms
@@ -361,81 +380,26 @@ ray_inv_div = 1/ray_dir
 ray_ori = np.ones(3) * 0
 
 # select the cubes that you want to intersect test (all of them?)
-tmp = table0[:, :8]
-cube_list = np.arange(0, 8) # to start
+level = 3
+table = tables_list[level] # from mipmap 2 to mipmap 3
+cube_list = np.arange(0, len(table)) # to start
 cube_touched = []
-cube_level = 1
-cube_size = 256/(2**cube_level)
+cube_size = 256/(2**level)
 for i in cube_list:
-    cube_ori = table0[i, 8:] * cube_size
+    cube_ori = table[i, 8:] * cube_size
     cube_end = cube_ori + cube_size - 1
     tn, tf = intersect_ray_aabb(ray_ori, ray_inv_div, cube_ori, cube_end)
-    print("tmin = {}, tmax = {}".format(tn, tf))
+    # print("tmin = {}, tmax = {}".format(tn, tf))
     if tn <= tf:
-        cube_touched.append(np.array(table0[i, 8:]))
+        cube_touched.append(np.array(table[i, 8:]))
         print("cube {} intersects the ray".format(i))
 
 
-# write function to check if intersection is correct (visualization)
-mipmap.reverse()
-def viz_intersection(ray_start, ray_end, level, mipmap, table=[], intersection_idx=[], total_width=256):
-    import open3d as o3d
-    import open3d.visualization as vis
-    import numpy as np
-
-    bbox = create_bbox(total_width)
-    nb_bins = 256 / 2**level
-    assert nb_bins == len(mipmap[level])
-    box_width = 2**level
-
-    box = o3d.geometry.TriangleMesh.create_box(box_width, box_width, box_width)
-    box.compute_triangle_normals()
-    geoms = []
-    grid = mipmap[level]
-    for i in range(2**level):
-        for j in range(2 ** level):
-            for k in range(2 ** level):
-                if grid[i, j, k] != 0:
-                    box = o3d.geometry.TriangleMesh.create_box(box_width, box_width, box_width)
-                    box.translate(np.array([box_width*i, box_width*j, box_width*k]))
-                    box.compute_triangle_normals()
-                    occ = grid[i, j, k] / box_width**3
-                    mat_box = vis.rendering.MaterialRecord()
-                    mat_box.shader = 'defaultLitTransparency'
-                    if
-                        mat_box.base_color = [0.5, 0, 0, occ]
-                    else:
-                        mat_box.base_color = [0.5, 0.5, 0.5, occ]
-                    mat_box.base_roughness = 0.0
-                    mat_box.base_reflectance = 0.0
-                    mat_box.base_clearcoat = 1.0
-                    mat_box.thickness = 1.0
-                    mat_box.transmission = 1.0
-                    mat_box.absorption_distance = 10
-                    mat_box.absorption_color = [0.5, 0.5, 0.5]
-                    name = 'box_'+str(i)+'_'+str(j)+'_'+str(k)
-                    geoms.append({'name':name, 'geometry':box, 'material':mat_box})
-
-    line = create_line(ray_start, ray_end)
-    geoms.append({'name': 'bbox', 'geometry': bbox})
-    geoms.append({'name': 'line', 'geometry': line})
-    return geoms
-
-geoms = viz_intersection(np.zeros(3), np.ones(3)*256, 5, mipmap)
+geoms = viz_mipmap(mipmap, level, 256, np.zeros(3), np.ones(3)*256, cube_touched)
+import open3d as o3d
+import open3d.visualization as vis
 vis.draw(geoms)
 
-
-
-# compute their origins and dimensions
-# each row i corresponds to the initial cube origin table0[i, 8:]
-i = 0
-
-cube_ori = table0[i, 8:]
-cube_size = 256/(2**level)
-box_bottom = cube_ori
-box_top = cube_ori + cube_size
-# create the cubes table
-i_cubes = np.unique(idx[:, 0])
 
 
 
