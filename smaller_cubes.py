@@ -37,10 +37,10 @@ def create_sphere(radius, center):
     pcd.points = o3d.utility.Vector3dVector(out)
     return pcd
 
-def create_line(start, end):
-    x = np.linspace(start[0], end[0], 100)
-    y = np.linspace(start[1], end[1], 100)
-    z = np.linspace(start[2], end[2], 100)
+def create_line(start, end, nb):
+    x = np.linspace(start[0], end[0], nb)
+    y = np.linspace(start[1], end[1], nb)
+    z = np.linspace(start[2], end[2], nb)
     out = np.vstack([x, y, z]).T
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(out)
@@ -181,7 +181,7 @@ def viz_mipmap(mipmap, level, total_width, ray_ori = np.zeros(3), ray_end = np.o
                     box = o3d.geometry.TriangleMesh.create_box(box_width, box_width, box_width)
                     box.translate(np.array([box_width*i, box_width*j, box_width*k]))
                     box.compute_triangle_normals()
-                    occ = grid[i, j, k] / box_width**3
+                    occ = grid[i, j, k] / box_width**4
                     mat_box = vis.rendering.MaterialRecord()
                     mat_box.shader = 'defaultLitTransparency'
                     mat_box.base_color = [0.5, 0.5, 0.5, occ]
@@ -196,7 +196,7 @@ def viz_mipmap(mipmap, level, total_width, ray_ori = np.zeros(3), ray_end = np.o
                     geoms.append({'name':name, 'geometry':box, 'material':mat_box})
 
     for i in range(len(touched)):
-        ori = cube_touched[i]
+        ori = touched[i]
         box = o3d.geometry.TriangleMesh.create_box(box_width, box_width, box_width)
         box.translate(ori * box_width)
         box.compute_triangle_normals()
@@ -214,7 +214,7 @@ def viz_mipmap(mipmap, level, total_width, ray_ori = np.zeros(3), ray_end = np.o
         name = 'box_touch' + str(i) + '_' + str(j) + '_' + str(k)
         geoms.append({'name': name, 'geometry': box, 'material': mat_box})
 
-    line = create_line(ray_ori, ray_end)
+    line = create_line(ray_ori, ray_end, nb_bins * 4)
     geoms.append({'name': 'bbox', 'geometry': bbox})
     geoms.append({'name': 'line', 'geometry': line})
     return geoms
@@ -375,12 +375,13 @@ check_table(table5, table6)
 check_table(table6, table7)
 
 # def search_mipmap_table(tables_list, rays):
-ray_dir = np.ones(3)/np.sqrt(3)
-ray_inv_div = 1/ray_dir
+ray_dir = np.array([1, 0.8, 0.8])
+ray_dir = ray_dir / np.linalg.norm(ray_dir)
+ray_inv_dir = 1/ray_dir
 ray_ori = np.ones(3) * 0
 
 # select the cubes that you want to intersect test (all of them?)
-level = 3
+level = 4
 table = tables_list[level] # from mipmap 2 to mipmap 3
 cube_list = np.arange(0, len(table)) # to start
 cube_touched = []
@@ -400,7 +401,94 @@ import open3d as o3d
 import open3d.visualization as vis
 vis.draw(geoms)
 
+def ray_mipmap_intersect(ray_ori, ray_inv_dir, tables_list, max_level):
+    cube_touched_idx = [0]
+    new_list = []
+    cube_ori_list = []
+    cube_end_list = []
+    for level in range(max_level+1):
+        # level = 0
+        table = tables_list[level]  # from mipmap 2 to mipmap 3
+        cube_size = 256 / (2 ** level)
 
+        for i in cube_touched_idx:
+            cube_ori = table[i, 8:] * cube_size
+            cube_end = cube_ori + cube_size - 1
+            tn, tf = intersect_ray_aabb(ray_ori, ray_inv_dir, cube_ori, cube_end)
+            # print("tmin = {}, tmax = {}".format(tn, tf))
+            if tn <= tf:
+                if level == max_level:
+                    cube_ori_list.append(table[i, 8:])
+                    # cube_end_list.append(cube_end)
+                    # pos_list.append(np.array(table[i, 8:]) * cube_size)
+                else:
+                    # cube_touched_pos.append(np.array(table[i, 8:]))
+                    mask = table[i, :8] != -1
+                    idx = table[i, :8][mask]
+                    idx = idx.astype(int)
+                    new_list += idx.tolist()
+        cube_touched_idx = new_list
+        new_list = []
+    return cube_ori_list
+
+max_level = 5
+out = ray_mipmap_intersect(ray_ori, ray_inv_dir, tables_list, max_level)
+
+geoms = viz_mipmap(mipmap, max_level, 256, np.zeros(3), ray_dir*400, out)
+import open3d as o3d
+import open3d.visualization as vis
+vis.draw(geoms)
+
+
+    # level = 1
+    # table = tables_list[level]  # from mipmap 2 to mipmap 3
+    # cube_size = 256 / (2 ** level)
+    # cube_touched_idx = new_list
+    # for i in cube_touched_idx:
+    #     cube_ori = table[i, 8:] * cube_size
+    #     cube_end = cube_ori + cube_size - 1
+    #     tn, tf = intersect_ray_aabb(ray_ori, ray_inv_div, cube_ori, cube_end)
+    #     # print("tmin = {}, tmax = {}".format(tn, tf))
+    #     if tn <= tf:
+    #         # cube_touched_pos.append(np.array(table[i, 8:]))
+    #         mask = table[i, :8] != -1
+    #         idx = table[i, :8][mask]
+    #         idx = idx.astype(int)
+    #         new_list += idx.tolist()
+    #
+    # cube_touched_idx = new_list
+    # level = 2
+    # table = tables_list[level]  # from mipmap 2 to mipmap 3
+    # cube_size = 256 / (2 ** level)
+    # new_list = []
+    # for i in cube_touched_idx:
+    #     cube_ori = table[i, 8:] * cube_size
+    #     cube_end = cube_ori + cube_size - 1
+    #     tn, tf = intersect_ray_aabb(ray_ori, ray_inv_div, cube_ori, cube_end)
+    #     # print("tmin = {}, tmax = {}".format(tn, tf))
+    #     if tn <= tf:
+    #         # cube_touched_pos.append(np.array(table[i, 8:]))
+    #         mask = table[i, :8] != -1
+    #         idx = table[i, :8][mask]
+    #         idx = idx.astype(int)
+    #         new_list += idx.tolist()
+    #
+    # cube_touched_idx = new_list
+    # level = 3
+    # table = tables_list[level]  # from mipmap 2 to mipmap 3
+    # cube_size = 256 / (2 ** level)
+    # new_list = []
+    # for i in cube_touched_idx:
+    #     cube_ori = table[i, 8:] * cube_size
+    #     cube_end = cube_ori + cube_size - 1
+    #     tn, tf = intersect_ray_aabb(ray_ori, ray_inv_div, cube_ori, cube_end)
+    #     # print("tmin = {}, tmax = {}".format(tn, tf))
+    #     if tn <= tf:
+    #         # cube_touched_pos.append(np.array(table[i, 8:]))
+    #         mask = table[i, :8] != -1
+    #         idx = table[i, :8][mask]
+    #         idx = idx.astype(int)
+    #         new_list += idx.tolist()
 
 
 # grid = g3
