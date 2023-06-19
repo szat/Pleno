@@ -2,9 +2,23 @@ import numpy as np
 import unittest
 from scipy.special import *
 # from renderer import *
-from spherical_harmonics import *
-from sampling_branch import *
+# from spherical_harmonics import *
+# from sampling_branch import *
 
+def intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max):
+    # considers the boundary of the volume as NON intersecting, if tmax <= tmin then NO intersection
+    if ray_origin.ndim == 1:
+        ray_origin = np.expand_dims(ray_origin, 0)
+        ray_inv_dir = np.expand_dims(ray_inv_dir, 0)
+    tmin = np.ones(len(ray_origin)) * -np.inf
+    tmax = np.ones(len(ray_origin)) * np.inf
+    t0 = (box_min - ray_origin) * ray_inv_dir
+    t1 = (box_max - ray_origin) * ray_inv_dir
+    tsmaller = np.nanmin([t0, t1], axis=0)
+    tbigger = np.nanmax([t0, t1], axis=0)
+    tmin = np.max([tmin, np.max(tsmaller, axis=1)], axis=0)
+    tmax = np.min([tmax, np.min(tbigger, axis=1)], axis=0)
+    return tmin, tmax
 
 class TestArchitecture(unittest.TestCase):
     def setUp(self):
@@ -85,6 +99,18 @@ class TestArchitecture(unittest.TestCase):
         ray_inv_dir = 1/ray_dir
         tnear = 0
         tfar = 2
+        tn, tf = intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max)
+        np.testing.assert_almost_equal(tnear, tn)
+        np.testing.assert_almost_equal(tfar, tf)
+
+    def test_origin_on_diag_intersect(self):
+        box_min = np.zeros(3)
+        box_max = np.array([1.0, 1.0, 1.0])
+        ray_origin = np.array([0.0, 0.0, 0.0]) #on face
+        ray_dir = np.array([1.0, 1.0, 1.0])/np.sqrt(3) #point towards cube
+        ray_inv_dir = 1/ray_dir
+        tnear = 0
+        tfar = np.sqrt(3)
         tn, tf = intersect_ray_aabb(ray_origin, ray_inv_dir, box_min, box_max)
         np.testing.assert_almost_equal(tnear, tn)
         np.testing.assert_almost_equal(tfar, tf)

@@ -160,6 +160,7 @@ npy_density_data = data['density_data'].astype(dtype=np.float16)
 npy_sh_data = data['sh_data'].astype(dtype=np.float16)
 npy_basis_type = data['basis_type']
 
+# this is not correct
 density_matrix = np.squeeze(npy_density_data[npy_links.clip(min=0)])
 sh_matrix = np.squeeze(npy_sh_data[npy_links.clip(min=0)])
 sh_matrix = sh_matrix[:,:,:,[0, 9, 19]]
@@ -167,10 +168,11 @@ sh_matrix = sh_matrix[:,:,:,[0, 9, 19]]
 n = 256
 coords = np.indices((n, n, n)).reshape(3, -1).T
 
+
 # Create a numpy array of colors
 opacities = density_matrix.flatten().reshape(-1, 1)
 
-mask_pos = np.squeeze(opacities >= 0.22)
+mask_pos = np.squeeze(opacities > 0)
 # mask_neg = np.squeeze(opacities < 0)
 
 coords_pos = coords[mask_pos,:]
