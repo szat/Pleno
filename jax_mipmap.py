@@ -425,3 +425,66 @@ def viz_line_intersection(level, total_width, ray_ori=np.zeros(3), ray_end=np.on
         return geoms
 
 
+
+def check_k_table(k_table, g_table, g_table_level):
+    voxel_size = 256 / (2 ** g_table_level)
+    for i in range(len(k_table)):
+        cube_ori = k_table[i, 6:9]
+        cube_row = k_table[i, -1]
+        cube_pos = g_table[int(cube_row), -3:]
+        np.testing.assert_almost_equal(cube_pos * voxel_size, cube_ori)
+
+
+def init_k_table(rays_ori, rays_inv, init_g_table):
+    nb_rays = len(rays_inv)
+    rays_id = np.arange(0, nb_rays)
+    level = 0
+    g_table = init_g_table  # from mipmap 2 to mipmap 3
+    cube_size = 256 / (2 ** level)
+    cube_ori = g_table[0, -3:] * cube_size
+    cube_end = cube_ori + cube_size
+
+    nb_compute = nb_rays # assume we check root intersection first
+    k_table = np.zeros([nb_compute, 3 + 3 + 3 + 3 + 1 + 1])
+    k_table[:, -2] = rays_id
+    k_table[:, -1] = 0  # voxel id / row id
+    k_table[:, 0:3] = rays_ori
+    k_table[:, 3:6] = rays_inv
+    k_table[:, 6:9] = cube_ori
+    k_table[:, 9:12] = cube_end
+    return k_table
+
+def next_k_table(k_table, g_table, level):
+    shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
+    tmp = []
+    voxel_size = 256 / (2 ** level)
+    sub_voxel_size = voxel_size / 2
+    for i in range(len(k_table)):
+        k_row = k_table[i, :]
+        voxel_id = int(k_row[-1])
+        voxel_pos = g_table[voxel_id][-3:] * voxel_size
+        mask_alive_sub_voxels = g_table[voxel_id][:8] != -1
+        sub_voxel_row = g_table[voxel_id][:8][mask_alive_sub_voxels]
+        sub_voxel_ori = voxel_pos + shift[mask_alive_sub_voxels] * sub_voxel_size
+        sub_voxel_end = sub_voxel_ori + sub_voxel_size
+        r_ori = k_row[0:3]
+        r_inv = k_row[3:6]
+        r_id = k_row[-2]
+        next_k = np.zeros([len(sub_voxel_row), 3 + 3 + 3 + 3 + 1 + 1])
+        next_k[:, :3] = r_ori
+        next_k[:, 3:6] = r_inv
+        next_k[:, -2] = r_id
+        next_k[:, 6:9] = sub_voxel_ori
+        next_k[:, 9:12] = sub_voxel_end
+        next_k[:, -1] = sub_voxel_row
+        tmp.append(next_k)
+    return np.concatenate(tmp)
+
+def intersect_ray_aabb_jax(ray_origin, ray_inv_dir, box_min, box_max):
+    t0 = (box_min - ray_origin) * ray_inv_dir
+    t1 = (box_max - ray_origin) * ray_inv_dir
+    tsmaller = jnp.nanmin(jnp.vstack([t0, t1]), axis=0)
+    tbigger = jnp.nanmax(jnp.vstack([t0, t1]), axis=0)
+    tmin = jnp.max(jnp.array([-jnp.inf, jnp.max(tsmaller)]))
+    tmax = jnp.min(jnp.array([jnp.inf, jnp.min(tbigger)]))
+    return tmin, tmax
