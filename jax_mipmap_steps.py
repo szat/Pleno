@@ -409,11 +409,17 @@ ray_ori = np.ones(3) * 0
 def ray_grid_intersect(ray_ori, ray_inv_dir, table, level):
     cube_size = 256 / (2 ** level)
     idx_list = []
+    tn_list = []
+    tf_list = []
+    cube_list = []
     for i in range(len(table)):
         cube_ori = table[i, -3:] * cube_size
         cube_end = cube_ori + cube_size
         tn, tf = intersect_ray_aabb(ray_ori, ray_inv_dir, cube_ori, cube_end)
         if tn <= tf:
+            # tn_list.append(tn)
+            # tf_list.append(tf)
+            # cube_list.append(cube_ori/cube_size)
             idx_list.append(i)
     return table[idx_list, -3:]
 
@@ -547,26 +553,56 @@ def next_k_table(k_table, g_table, level):
     tmp = []
     voxel_size = 256 / (2 ** level)
     sub_voxel_size = voxel_size / 2
-    for i in range(len(k_table)):
-        k_row = k_table[i, :]
-        voxel_id = int(k_row[-1])
-        voxel_pos = g_table[voxel_id][-3:] * voxel_size
-        mask_alive_sub_voxels = g_table[voxel_id][:8] != -1
-        sub_voxel_row = g_table[voxel_id][:8][mask_alive_sub_voxels]
-        sub_voxel_ori = voxel_pos + shift[mask_alive_sub_voxels] * sub_voxel_size
-        sub_voxel_end = sub_voxel_ori + sub_voxel_size
-        r_ori = k_row[0:3]
-        r_inv = k_row[3:6]
-        r_id = k_row[-2]
-        next_k = np.zeros([len(sub_voxel_row), 3 + 3 + 3 + 3 + 1 + 1])
-        next_k[:, :3] = r_ori
-        next_k[:, 3:6] = r_inv
-        next_k[:, -2] = r_id
-        next_k[:, 6:9] = sub_voxel_ori
-        next_k[:, 9:12] = sub_voxel_end
-        next_k[:, -1] = sub_voxel_row
-        tmp.append(next_k)
-    return np.concatenate(tmp)
+    #
+    # # k_table = k_table[tn <= tf, :]
+    idx = k_table[:, -1].astype(int)
+    g_table_ = g_table[idx]
+    mask_alive_sub_voxels_ = g_table_[:, :8] != -1
+
+    sub_voxel_row_ = g_table_[:, :8][mask_alive_sub_voxels_]
+    voxel_pos_ = np.broadcast_to(g_table_[:, -3:][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_] * voxel_size
+    shift_ = np.broadcast_to(shift, (len(mask_alive_sub_voxels_),8,3))[mask_alive_sub_voxels_]
+    sub_voxel_ori_ = voxel_pos_ + shift_ * sub_voxel_size
+    sub_voxel_end_ = sub_voxel_ori_ + sub_voxel_size
+    r_ori_ = np.broadcast_to(k_table[:, 0:3][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_]
+    r_inv_ = np.broadcast_to(k_table[:, 3:6][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_]
+    r_id_ = np.broadcast_to(k_table[:, -2][:, None], [len(mask_alive_sub_voxels_), 8])[mask_alive_sub_voxels_]
+
+    next_k_ = np.zeros([len(sub_voxel_row_), 3 + 3 + 3 + 3 + 1 + 1])
+    next_k_[:, 0:3] = r_ori_
+    next_k_[:, 3:6] = r_inv_
+    next_k_[:, -2] = r_id_
+    next_k_[:, 6:9] = sub_voxel_ori_
+    next_k_[:, 9:12] = sub_voxel_end_
+    next_k_[:, -1] = sub_voxel_row_
+    res = next_k_
+
+    # for i in range(len(k_table)):
+    #     k_row = k_table[i, :]
+    #     voxel_id = int(k_row[-1])
+    #     voxel_pos = g_table[voxel_id][-3:] * voxel_size
+    #
+    #
+    #     mask_alive_sub_voxels = g_table[voxel_id][:8] != -1
+    #
+    #
+    #     sub_voxel_row = g_table[voxel_id][:8][mask_alive_sub_voxels]
+    #     sub_voxel_ori = voxel_pos + shift[mask_alive_sub_voxels] * sub_voxel_size
+    #     sub_voxel_end = sub_voxel_ori + sub_voxel_size
+    #     r_ori = k_row[0:3]
+    #     r_inv = k_row[3:6]
+    #     r_id = k_row[-2]
+    #     next_k = np.zeros([len(sub_voxel_row), 3 + 3 + 3 + 3 + 1 + 1])
+    #     next_k[:, :3] = r_ori
+    #     next_k[:, 3:6] = r_inv
+    #     next_k[:, -2] = r_id
+    #     next_k[:, 6:9] = sub_voxel_ori
+    #     next_k[:, 9:12] = sub_voxel_end
+    #     next_k[:, -1] = sub_voxel_row
+    #     tmp.append(next_k)
+    # res = np.concatenate(tmp)
+    # print(len(res))
+    return res
 
 # level = 0
 # g_table = tables_list[level]  # from mipmap 2 to mipmap 3
@@ -587,20 +623,29 @@ idx = table[:, :8][mask]
 
 shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
 
-nb_rays = 1
+nb_rays = 100
 ray_id = np.arange(0, nb_rays)
 ray_ori = np.random.rand(nb_rays, 3) * 10 - 5
-ray_dir = np.array([[1, 1.0, 1]]) + np.random.rand(nb_rays, 3)/10
+ray_dir = np.array([[1, 1.0, 1]]) + np.random.rand(nb_rays, 3) / 10
 ray_dir = ray_dir / np.linalg.norm(ray_dir)
-ray_inv_dir = 1/ray_dir
+ray_inv_dir = 1 / ray_dir
 
-max_level = 2
-table = make_table_last(g2)
-out_a = ray_grid_intersect(ray_ori, ray_inv_dir, table, max_level)
-out_a = np.array(out_a)
-dist = np.linalg.norm(out_a - sort_pt, axis = 1)
-out_a = out_a[dist.argsort()]
+sort_pt = np.array([0, 3, -10])
 
+# LEVEL 1
+max_level = 3
+table = make_table_last(g3)
+tmp = []
+tmp_idx = []
+for i in range(nb_rays):
+    out_a = ray_grid_intersect(ray_ori[i], ray_inv_dir[i], table, max_level)
+    out_a = np.array(out_a)
+    dist = np.linalg.norm(out_a - sort_pt, axis=1)
+    out_a = out_a[dist.argsort()]
+    tmp.append(out_a)
+    tmp_idx.append(np.ones(len(out_a))*i)
+tmp_idx = np.concatenate(tmp_idx)
+tmp = np.concatenate(tmp)
 
 k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
@@ -611,13 +656,24 @@ k_table = k_table[tn <= tf, :]
 k_table = next_k_table(k_table, tables_list[1], 1)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
+k_table = next_k_table(k_table, tables_list[2], 2)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = k_table[tn <= tf, :]
 
-level = 1
-out_k = k_table[:, 6:9] / (256 / 2**(level+1))
-out_k = np.array(out_k)
-dist = np.linalg.norm(out_k - sort_pt, axis = 1)
-out_k = out_k[dist.argsort()]
-np.testing.assert_almost_equal(np.array(out_k), np.array(out_a))
+for i in range(nb_rays):
+    k_table_idx = k_table[:, -2] == i
+    k_table_pos = k_table[k_table_idx, 6:9] /  (256 / 2 ** (max_level))
+    dist = np.linalg.norm(k_table_pos - sort_pt, axis=1)
+    k_table_pos = k_table_pos[dist.argsort()]
+    other_pos = tmp[i]
+    dist = np.linalg.norm(other_pos - sort_pt, axis=1)
+    other_pos = other_pos[dist.argsort()]
+    np.testing.assert_almost_equal(k_table_pos, other_pos)
+
+
+
+
+
 
 
 
@@ -732,4 +788,34 @@ k_table = k_table[tn <= tf, :]
 k_table = next_k_table(k_table, tables_list[2], 2)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
+
+
+
+# from occupancy voxels
+# create the set of total boxes, in a table, so each row of a table is box start box end, i.e. n x 4
+box_size = 1 # lowest level
+nb_boxes = occupancy_voxels.sum()
+x, y, z = np.where(occupancy_voxels)
+
+box_table = jnp.vstack([x, y, z]).transpose()
+box_table_end = box_table + 1
+from jax import random
+key = random.PRNGKey(0)
+random.uniform(key, [10, 1])
+
+nb_rays = 10000
+ray_id = jnp.arange(0, nb_rays)
+ray_ori = random.uniform(key, [nb_rays, 1]) * 10 - 5
+ray_dir = jnp.array([[1, 1.0, 1]]) + random.uniform(key, [nb_rays, 3])/10
+ray_dir = ray_dir / jnp.linalg.norm(ray_dir)
+ray_inv_dir = 1/ray_dir
+
+# def intersect_ray_aabb_jax(ray_origin, ray_inv_dir, box_min, box_max):
+def roll_on_boxes(one_ray_ori, one_ray_inv_dir):
+    fct = jit(vmap(intersect_ray_aabb_jax, in_axes=(None, None, 0, 0)), static_argnums=(2,3,))
+    return fct(one_ray_ori, one_ray_inv_dir, box_table, box_table_end)
+
+res = roll_on_boxes(ray_ori[0], ray_inv_dir[0])
+
+res = vmap(roll_on_boxes, in_axes=(0, 0))(ray_ori, ray_inv_dir)
 

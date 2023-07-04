@@ -454,6 +454,26 @@ def init_k_table(rays_ori, rays_inv, init_g_table):
     k_table[:, 9:12] = cube_end
     return k_table
 
+def init_k_table_jax(rays_ori, rays_inv, init_g_table):
+    nb_rays = len(rays_inv)
+    rays_id = jnp.arange(0, nb_rays)
+    level = 0
+    g_table = init_g_table  # from mipmap 2 to mipmap 3
+    cube_size = 256 / (2 ** level)
+    cube_ori = g_table[0, -3:] * cube_size
+    cube_end = cube_ori + cube_size
+
+    nb_compute = nb_rays # assume we check root intersection first
+    k_table = jnp.zeros([nb_compute, 3 + 3 + 3 + 3 + 1 + 1])
+    k_table = k_table.at[:, -2].set(rays_id)
+    k_table = k_table.at[:, -1  ].set(0)  # voxel id / row id
+    k_table = k_table.at[:, 0:3 ].set(rays_ori)
+    k_table = k_table.at[:, 3:6 ].set(rays_inv)
+    k_table = k_table.at[:, 6:9 ].set(cube_ori)
+    k_table = k_table.at[:, 9:12].set(cube_end)
+    return k_table
+
+
 def next_k_table(k_table, g_table, level):
     shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
     tmp = []
@@ -479,6 +499,34 @@ def next_k_table(k_table, g_table, level):
         next_k[:, -1] = sub_voxel_row
         tmp.append(next_k)
     return np.concatenate(tmp)
+
+
+def next_k_table_vec(k_table, g_table, level):
+    shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
+    tmp = []
+    voxel_size = 256 / (2 ** level)
+    sub_voxel_size = voxel_size / 2
+    for i in range(len(k_table)):
+        k_row = k_table[i, :]
+        voxel_id = int(k_row[-1])
+        voxel_pos = g_table[voxel_id][-3:] * voxel_size
+        mask_alive_sub_voxels = g_table[voxel_id][:8] != -1
+        sub_voxel_row = g_table[voxel_id][:8][mask_alive_sub_voxels]
+        sub_voxel_ori = voxel_pos + shift[mask_alive_sub_voxels] * sub_voxel_size
+        sub_voxel_end = sub_voxel_ori + sub_voxel_size
+        r_ori = k_row[0:3]
+        r_inv = k_row[3:6]
+        r_id = k_row[-2]
+        next_k = np.zeros([len(sub_voxel_row), 3 + 3 + 3 + 3 + 1 + 1])
+        next_k[:, :3] = r_ori
+        next_k[:, 3:6] = r_inv
+        next_k[:, -2] = r_id
+        next_k[:, 6:9] = sub_voxel_ori
+        next_k[:, 9:12] = sub_voxel_end
+        next_k[:, -1] = sub_voxel_row
+        tmp.append(next_k)
+    return np.concatenate(tmp)
+
 
 def intersect_ray_aabb_jax(ray_origin, ray_inv_dir, box_min, box_max):
     t0 = (box_min - ray_origin) * ray_inv_dir

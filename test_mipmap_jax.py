@@ -215,7 +215,6 @@ class TestJax(unittest.TestCase):
         import open3d.visualization as vis
         vis.draw(geoms)
 
-
     def test_mipmap_intersect(self):
         path = '/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz'
         data = np.load(path, allow_pickle=True)
@@ -611,12 +610,16 @@ class TestJax(unittest.TestCase):
         max_level = 5
         table = make_table_last(g5)
         tmp = []
+        tmp_idx = []
         for i in range(nb_rays):
             out_a = ray_grid_intersect(ray_ori[i], ray_inv_dir[i], table, max_level)
             out_a = np.array(out_a)
-            dist = np.linalg.norm(out_a - sort_pt, axis = 1)
+            dist = np.linalg.norm(out_a - sort_pt, axis=1)
             out_a = out_a[dist.argsort()]
             tmp.append(out_a)
+            tmp_idx.append(np.ones(len(out_a)) * i)
+        tmp_idx = np.concatenate(tmp_idx)
+        tmp = np.concatenate(tmp)
 
         k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
         tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
@@ -637,23 +640,159 @@ class TestJax(unittest.TestCase):
         tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
         k_table = k_table[tn <= tf, :]
 
-        mask0 = k_table[:, -2] == 0
-        mask1 = k_table[:, -2] == 1
-        k0 = k_table[mask0]
-        k1 = k_table[mask1]
+        for i in range(nb_rays):
+            k_table_idx = k_table[:, -2] == i
+            k_table_pos = k_table[k_table_idx, 6:9] / (256 / 2 ** (max_level))
+            dist = np.linalg.norm(k_table_pos - sort_pt, axis=1)
+            k_table_pos = k_table_pos[dist.argsort()]
+            other_pos = tmp[i]
+            dist = np.linalg.norm(other_pos - sort_pt, axis=1)
+            other_pos = other_pos[dist.argsort()]
+            np.testing.assert_almost_equal(k_table_pos, other_pos)
 
-        k0 = k0[:, 6:9] / (256 / 2**(max_level))
-        k0 = np.array(k0)
-        dist = np.linalg.norm(k0 - sort_pt, axis = 1)
-        k0 = k0[dist.argsort()]
 
-        k1 = k1[:, 6:9] / (256 / 2**(max_level))
-        k1 = np.array(k1)
-        dist = np.linalg.norm(k1 - sort_pt, axis = 1)
-        k1 = k1[dist.argsort()]
+    def test_mipmap_ktables_speedup(self):
+        path = '/home/adrian/Code/svox2/opt/ckpt/exp2/ckpt.npz'
+        data = np.load(path, allow_pickle=True)
+        npy_links = data['links']
+        npy_density_data = data['density_data']
+        npy_sh_data = data['sh_data']
 
-        np.testing.assert_almost_equal(np.array(k0), np.array(tmp[0]))
-        np.testing.assert_almost_equal(np.array(k1), np.array(tmp[1]))
+        # hack
+        npy_density_data[0] = 0
+        npy_sh_data[0] = 0
+        npy_links[npy_links < 0] = 0
+
+        density_matrix = np.squeeze(npy_density_data[npy_links.clip(min=0)])
+        density_matrix[density_matrix < 0.2] = 0
+        mask_sphere = filter_over_sphere(density_matrix, np.ones(3) * 128, 100)
+        density_matrix[~mask_sphere] = 0
+
+        occupancy_voxels = create_occupancy_voxels(density_matrix)
+
+        # Mipmap
+        mipmap = mipmap_compute(occupancy_voxels)
+        mipmap.reverse()
+
+        g0 = mipmap[0] > 0
+        g1 = mipmap[1] > 0
+        g2 = mipmap[2] > 0
+        g3 = mipmap[3] > 0
+        g4 = mipmap[4] > 0
+        g5 = mipmap[5] > 0
+        g6 = mipmap[6] > 0
+        g7 = mipmap[7] > 0
+        g8 = mipmap[8] > 0
+
+        table0 = make_table(g0, g1)
+        table1 = make_table(g1, g2)
+        table2 = make_table(g2, g3)
+        table3 = make_table(g3, g4)
+        table4 = make_table(g4, g5)
+        table5 = make_table(g5, g6)
+        table6 = make_table(g6, g7)
+        table7 = make_table(g7, g8)
+        # table8 = make_table(g8, g8, 8)
+        table8 = make_table_last(g8)
+
+        tables_list = [table0, table1, table2, table3, table4, table5, table6, table7, table8]
+
+        check_table(table0, table1)
+        check_table(table1, table2)
+        check_table(table2, table3)
+        check_table(table3, table4)
+        check_table(table4, table5)
+        check_table(table5, table6)
+        check_table(table6, table7)
+        check_table(table7, table8)
+
+        shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
+
+        nb_rays = 10
+        ray_id = np.arange(0, nb_rays)
+        ray_ori = np.random.rand(nb_rays, 3) * 10 - 5
+        ray_dir = np.array([[1, 1.0, 1]]) + np.random.rand(nb_rays, 3)/10
+        ray_dir = ray_dir / np.linalg.norm(ray_dir)
+        ray_inv_dir = 1/ray_dir
+
+        sort_pt = np.array([0, 3, -10])
+
+        # LEVEL 1
+        max_level = 3
+        table = make_table_last(g3)
+        tmp = []
+        tmp_idx = []
+        for i in range(nb_rays):
+            out_a = ray_grid_intersect(ray_ori[i], ray_inv_dir[i], table, max_level)
+            out_a = np.array(out_a)
+            dist = np.linalg.norm(out_a - sort_pt, axis=1)
+            out_a = out_a[dist.argsort()]
+            tmp.append(out_a)
+            tmp_idx.append(np.ones(len(out_a)) * i)
+        tmp_idx = np.concatenate(tmp_idx)
+        tmp = np.concatenate(tmp)
+
+
+        jit_init_k_table = jit(init_k_table_jax)
+
+        t0 = time.time()
+        k_table_jax = jit_init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+        print(time.time() - t0)
+
+        k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+        np.testing.assert_almost_equal(np.array(k_table), np.array(k_table_jax))
+
+        k_table = k_table_jax
+        t0 = time.time()
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+        print(time.time() - t0)
+
+        jit_intersect = jit(vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0)))
+        t0 = time.time()
+        tn_jit, tf_jit = jit_intersect(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+        print(time.time() - t0)
+
+        np.testing.assert_almost_equal(np.array(tn_jit), np.array(tn))
+        np.testing.assert_almost_equal(np.array(tf_jit), np.array(tf))
+
+        k_table = k_table[tn <= tf, :]
+        k_table = next_k_table(k_table, tables_list[0], 0)
+
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+        k_table = k_table[tn <= tf, :]
+        k_table = next_k_table(k_table, tables_list[1], 1)
+
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+        k_table = k_table[tn <= tf, :]
+        k_table = next_k_table(k_table, tables_list[2], 2)
+
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+        k_table = k_table[tn <= tf, :]
+        k_table = next_k_table(k_table, tables_list[3], 3)
+
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+        k_table = k_table[tn <= tf, :]
+        k_table = next_k_table(k_table, tables_list[4], 4)
+
+        tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+        k_table = k_table[tn <= tf, :]
+
+        for i in range(nb_rays):
+            k_table_idx = k_table[:, -2] == i
+            k_table_pos = k_table[k_table_idx, 6:9] / (256 / 2 ** (max_level))
+            dist = np.linalg.norm(k_table_pos - sort_pt, axis=1)
+            k_table_pos = k_table_pos[dist.argsort()]
+            other_pos = tmp[i]
+            dist = np.linalg.norm(other_pos - sort_pt, axis=1)
+            other_pos = other_pos[dist.argsort()]
+            np.testing.assert_almost_equal(k_table_pos, other_pos)
+
+
 
 if __name__ == '__main__':
     unittest.main()
