@@ -618,10 +618,10 @@ def next_k_table(k_table, g_table, level):
 # active_rays = ray_id[mask_rays]
 
 #for the active rays, we add all the live subvoxels for the next computation in all the intersected rows
-mask = table[:, :8] != -1
-idx = table[:, :8][mask]
-
-shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
+# mask = table[:, :8] != -1
+# idx = table[:, :8][mask]
+#
+# shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
 
 nb_rays = 100
 ray_id = np.arange(0, nb_rays)
@@ -631,6 +631,7 @@ ray_dir = ray_dir / np.linalg.norm(ray_dir)
 ray_inv_dir = 1 / ray_dir
 
 sort_pt = np.array([0, 3, -10])
+
 
 # LEVEL 1
 max_level = 3
@@ -644,8 +645,8 @@ for i in range(nb_rays):
     out_a = out_a[dist.argsort()]
     tmp.append(out_a)
     tmp_idx.append(np.ones(len(out_a))*i)
-tmp_idx = np.concatenate(tmp_idx)
-tmp = np.concatenate(tmp)
+# tmp_idx = np.concatenate(tmp_idx)
+# tmp = np.concatenate(tmp)
 
 k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
@@ -657,19 +658,64 @@ k_table = next_k_table(k_table, tables_list[1], 1)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
 k_table = next_k_table(k_table, tables_list[2], 2)
+
+k_table_ = copy.deepcopy(k_table)
+batch_size = 100
+batch_nb = np.ceil(len(k_table)/batch_size)
+tmp_tn = []
+tmp_tf = []
+for i in range(int(batch_nb - 1)):
+    tmp2 = k_table_[i * batch_size : (i+1) * batch_size, :]
+    tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(tmp2[:, 0:3], tmp2[:, 3:6], tmp2[:, 6:9], tmp2[:, 9:12])
+    tmp_tn.append(tn)
+    tmp_tf.append(tf)
+last_dab = len(k_table) - (batch_nb - 1) * batch_size
+tmp2 = np.zeros([batch_size, 14])
+tmp2[:int(last_dab)] = k_table_[int((batch_nb - 1) * batch_size):, :]
+tn_, tf_ = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(tmp2[:, 0:3], tmp2[:, 3:6], tmp2[:, 6:9], tmp2[:, 9:12])
+tmp_tn.append(tn_[:int(last_dab)])
+tmp_tf.append(tf_[:int(last_dab)])
+ttn = np.concatenate(tmp_tn)
+ttf = np.concatenate(tmp_tf)
+k_table_ = k_table_[ttn <= ttf, :]
+
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
 
 for i in range(nb_rays):
     k_table_idx = k_table[:, -2] == i
     k_table_pos = k_table[k_table_idx, 6:9] /  (256 / 2 ** (max_level))
+    other_pos = tmp[i]
     dist = np.linalg.norm(k_table_pos - sort_pt, axis=1)
     k_table_pos = k_table_pos[dist.argsort()]
-    other_pos = tmp[i]
     dist = np.linalg.norm(other_pos - sort_pt, axis=1)
     other_pos = other_pos[dist.argsort()]
     np.testing.assert_almost_equal(k_table_pos, other_pos)
 
+np.testing.assert_almost_equal(k_table, k_table_)
+
+
+
+
+# batch_size = 100
+# batch_nb = np.ceil(len(k_table)/batch_size)
+# tmp_tn = []
+# tmp_tf = []
+# for i in range(int(batch_nb - 1)):
+#     tmp = k_table[i * batch_size : (i+1) * batch_size, :]
+#     tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(tmp[:, 0:3], tmp[:, 3:6], tmp[:, 6:9], tmp[:, 9:12])
+#     tmp_tn.append(tn)
+#     tmp_tf.append(tf)
+# tmp = np.zeros([batch_size, 14])
+# tmp[:int(len(k_table) - batch_size * (batch_nb - 1))] = k_table[int(batch_size * (batch_nb - 1)):, :]
+# tmp = jnp.array(tmp)
+# tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(tmp[:, 0:3], tmp[:, 3:6], tmp[:, 6:9], tmp[:, 9:12])
+# tmp_tn.append(tn[:int(len(k_table) - batch_size * (batch_nb - 1))])
+# tmp_tf.append(tf[:int(len(k_table) - batch_size * (batch_nb - 1))])
+# tn = np.concatenate(tmp_tn)
+# tf = np.concatenate(tmp_tf)
+# k_table = k_table[tn <= tf, :]
+# k_table = np.array(k_table)
 
 
 
