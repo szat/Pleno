@@ -629,7 +629,6 @@ ray_ori = np.random.rand(nb_rays, 3) * 10 - 5
 ray_dir = np.array([[1, 1.0, 1]]) + np.random.rand(nb_rays, 3) / 10
 ray_dir = ray_dir / np.linalg.norm(ray_dir)
 ray_inv_dir = 1 / ray_dir
-
 sort_pt = np.array([0, 3, -10])
 
 
@@ -722,80 +721,64 @@ def compute_k_table(k_table, batch_size):
     return ttn, ttf
 
 
-
 def next_k_table2(k_table, g_table, level, tn, tf):
     shift = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
     voxel_size = 256 / (2 ** level)
     sub_voxel_size = voxel_size / 2
 
     k_table = k_table[tn <= tf, :]
+
     idx = k_table[:, -1].astype(int)
     g_table_ = g_table[idx]
-    mask_alive_sub_voxels_ = g_table_[:, :8] != -1
 
-    sub_voxel_row_ = g_table_[:, :8][mask_alive_sub_voxels_]
-    voxel_pos_ = np.broadcast_to(g_table_[:, -3:][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_] * voxel_size
-    shift_ = np.broadcast_to(shift, (len(mask_alive_sub_voxels_),8,3))[mask_alive_sub_voxels_]
-    sub_voxel_ori_ = voxel_pos_ + shift_ * sub_voxel_size
-    sub_voxel_end_ = sub_voxel_ori_ + sub_voxel_size
-    r_ori_ = np.broadcast_to(k_table[:, 0:3][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_]
-    r_inv_ = np.broadcast_to(k_table[:, 3:6][:, None, :], [len(mask_alive_sub_voxels_), 8, 3])[mask_alive_sub_voxels_]
-    r_id_ = np.broadcast_to(k_table[:, -2][:, None], [len(mask_alive_sub_voxels_), 8])[mask_alive_sub_voxels_]
+    mask_alive = g_table_[:, :8] != -1
+    nb_new = len(mask_alive)
+    sub_voxel_row_ = g_table_[:, :8][mask_alive]
 
     next_k_ = np.zeros([len(sub_voxel_row_), 3 + 3 + 3 + 3 + 1 + 1])
-    next_k_[:, 0:3] = r_ori_
-    next_k_[:, 3:6] = r_inv_
-    next_k_[:, -2] = r_id_
+    next_k_[:, -1] = sub_voxel_row_ #voxel id next g table
+
+    next_k_[:, -2] = np.broadcast_to(k_table[:, -2][:, None], [nb_new, 8])[mask_alive] #ray id
+    next_k_[:, 0:6] = np.broadcast_to(k_table[:, 0:6][:, None, :], [nb_new, 8, 6])[mask_alive] # ray ori and inv
+
+    voxel_pos_ = np.broadcast_to(g_table_[:, -3:][:, None, :], [nb_new, 8, 3])[mask_alive] * voxel_size
+    shift_ = np.broadcast_to(shift, (nb_new,8,3))[mask_alive]
+    sub_voxel_ori_ = voxel_pos_ + shift_ * sub_voxel_size
+    sub_voxel_end_ = sub_voxel_ori_ + sub_voxel_size
     next_k_[:, 6:9] = sub_voxel_ori_
     next_k_[:, 9:12] = sub_voxel_end_
-    next_k_[:, -1] = sub_voxel_row_
-    res = next_k_
-    return res
+    return next_k_
 
+def next_k_table3(jnp_k_table, jnp_g_table, level, jnp_tn, jnp_tf):
+    # jnp_k_table = jnp.array(k_table)
+    # jnp_g_table = jnp.array(g_table)
+    # jnp_tn = jnp.array(tn)
+    # jnp_tf = jnp.array(tf)
 
+    shift = jnp.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1], [1, 1, 1]])
+    voxel_size = 256 / (2 ** level)
+    sub_voxel_size = voxel_size / 2
 
-k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
+    jnp_k_table = jnp_k_table[jnp_tn <= jnp_tf, :]
 
-k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[0], 0)
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
+    jnp_idx = jnp_k_table[:, -1].astype(int)
+    jnp_g_table_ = jnp_g_table[jnp_idx]
+    jnp_mask_alive = jnp_g_table_[:, :8] != -1
+    nb_new = len(jnp_mask_alive)
+    jnp_sub_voxel_row_ = jnp_g_table_[:, :8][jnp_mask_alive]
 
-k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[1], 1)
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
+    jnp_next_k_ = jnp.zeros([len(jnp_sub_voxel_row_), 3 + 3 + 3 + 3 + 1 + 1])
+    jnp_next_k_ = jnp_next_k_.at[:, -1].set(jnp_sub_voxel_row_) #voxel id next g table
+    jnp_next_k_ = jnp_next_k_.at[:, -2].set(jnp.broadcast_to(jnp_k_table[:, -2][:, None], [nb_new, 8])[jnp_mask_alive]) #ray id
+    jnp_next_k_ = jnp_next_k_.at[:, 0:6].set(jnp.broadcast_to(jnp_k_table[:, 0:6][:, None, :], [nb_new, 8, 6])[jnp_mask_alive]) # ray ori and inv
 
-k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[2], 2)
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
-
-k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[3], 3)
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
-
-k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[4], 4)
-tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-tn2, tf2 = compute_k_table(k_table, 5000)
-np.testing.assert_almost_equal(tn, tn2)
-np.testing.assert_almost_equal(tf, tf2)
-
-
+    voxel_pos_ = jnp.broadcast_to(jnp_g_table_[:, -3:][:, None, :], [nb_new, 8, 3])[jnp_mask_alive] * voxel_size
+    shift_ = jnp.broadcast_to(shift, (nb_new,8,3))[jnp_mask_alive]
+    sub_voxel_ori_ = voxel_pos_ + shift_ * sub_voxel_size
+    sub_voxel_end_ = sub_voxel_ori_ + sub_voxel_size
+    jnp_next_k_ = jnp_next_k_.at[:, 6:9].set(sub_voxel_ori_)
+    jnp_next_k_ = jnp_next_k_.at[:, 9:12].set(sub_voxel_end_)
+    return jnp_next_k_
 
 
 k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
@@ -806,25 +789,78 @@ tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_t
 k_table = k_table[tn <= tf, :]
 k_table = next_k_table(k_table, tables_list[1], 1)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
-k_table = k_table[tn <= tf, :]
 k_table = next_k_table(k_table, tables_list[2], 2)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
-k_table = next_k_table(k_table, tables_list[3], 3)
+k_table1 = copy.deepcopy(k_table)
+
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table2(k_table, tables_list[0], 0, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table2(k_table, tables_list[1], 1, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table2(k_table, tables_list[2], 2, tn, tf)
 tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
 k_table = k_table[tn <= tf, :]
+k_table2 = copy.deepcopy(k_table)
 
-k_table2 = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
-tn, tf = compute_k_table(k_table2, 5000)
-k_table2 = next_k_table2(k_table2, tables_list[0], 0, tn, tf)
-tn, tf = compute_k_table(k_table2, 5000)
-k_table2 = next_k_table2(k_table2, tables_list[1], 1, tn, tf)
-tn, tf = compute_k_table(k_table2, 5000)
-k_table2 = next_k_table2(k_table2, tables_list[2], 2, tn, tf)
-tn, tf = compute_k_table(k_table2, 5000)
-k_table2 = next_k_table2(k_table2, tables_list[3], 3, tn, tf)
-tn, tf = compute_k_table(k_table2, 5000)
-k_table2 = k_table2[tn <= tf, :]
+np.testing.assert_almost_equal(k_table1, k_table2)
 
-np.testing.assert_almost_equal(k_table, k_table2)
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[0], 0, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[1], 1, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[2], 2, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = k_table[tn <= tf, :]
+k_table3 = copy.deepcopy(k_table)
+
+np.testing.assert_almost_equal(k_table1, k_table3)
+
+# timing
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[0], 0, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[1], 1, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+jnp_k_table = jax.device_put(jnp.array(k_table))
+jnp_g_table = jax.device_put(jnp.array(tables_list[2]))
+jnp_tn = jax.device_put(jnp.array(tn))
+jnp_tf = jax.device_put(jnp.array(tf))
+
+# improvement of some amount, like 40% faster
+t0 = time.time()
+next_k_table3(k_table, tables_list[2], 2, tn, tf)
+print(time.time() - t0)
+
+# the timing with normal numpy
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[0], 0, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+k_table = next_k_table3(k_table, tables_list[1], 1, tn, tf)
+tn, tf = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))(k_table[:, 0:3], k_table[:, 3:6], k_table[:, 6:9], k_table[:, 9:12])
+
+t0 = time.time()
+next_k_table2(k_table, tables_list[2], 2, tn, tf)
+print(time.time() - t0)
+
+# testing whether the compute function works
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+tn, tf = compute_k_table(k_table, 5000)
+k_table = next_k_table2(k_table, tables_list[0], 0, tn, tf)
+tn, tf = compute_k_table(k_table, 5000)
+k_table = next_k_table2(k_table, tables_list[1], 1, tn, tf)
+tn, tf = compute_k_table(k_table, 5000)
+k_table = next_k_table2(k_table, tables_list[2], 2, tn, tf)
+tn, tf = compute_k_table(k_table, 5000)
+k_table = k_table[tn <= tf, :]
+
+np.testing.assert_almost_equal(k_table1, k_table)
+
 
