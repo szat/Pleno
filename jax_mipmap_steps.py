@@ -698,26 +698,26 @@ np.testing.assert_almost_equal(k_table, k_table_)
 
 
 def compute_k_table(k_table, batch_size):
-    k_table_ = copy.deepcopy(k_table)
-    batch_nb = np.ceil(len(k_table) / batch_size)
+    # k_table_ = copy.deepcopy(k_table)
+    batch_nb = jnp.ceil(len(k_table) / batch_size)
     tmp_tn = []
     tmp_tf = []
     fct = vmap(intersect_ray_aabb_jax, in_axes=(0, 0, 0, 0))
     fct_jit = jit(fct)
     for i in range(int(batch_nb - 1)):
-        tmp2 = k_table_[i * batch_size: (i + 1) * batch_size, :]
+        tmp2 = k_table[i * batch_size: (i + 1) * batch_size, :]
         tn, tf = fct_jit(tmp2[:, 0:3], tmp2[:, 3:6], tmp2[:, 6:9], tmp2[:, 9:12])
         tmp_tn.append(tn)
         tmp_tf.append(tf)
 
     last_dab = len(k_table) - (batch_nb - 1) * batch_size
     tmp2 = np.zeros([batch_size, 14])
-    tmp2[:int(last_dab)] = k_table_[int((batch_nb - 1) * batch_size):, :]
+    tmp2[:int(last_dab)] = k_table[int((batch_nb - 1) * batch_size):, :]
     tn_, tf_ = fct_jit(tmp2[:, 0:3], tmp2[:, 3:6], tmp2[:, 6:9], tmp2[:, 9:12])
     tmp_tn.append(tn_[:int(last_dab)])
     tmp_tf.append(tf_[:int(last_dab)])
-    ttn = np.concatenate(tmp_tn)
-    ttf = np.concatenate(tmp_tf)
+    ttn = jnp.concatenate(tmp_tn)
+    ttf = jnp.concatenate(tmp_tf)
     return ttn, ttf
 
 
@@ -851,16 +851,49 @@ next_k_table2(k_table, tables_list[2], 2, tn, tf)
 print(time.time() - t0)
 
 # testing whether the compute function works
+
 k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
-tn, tf = compute_k_table(k_table, 5000)
+k_table = jax.device_put(jnp.array(k_table))
+tn, tf = compute_k_table(k_table, 10000)
 k_table = next_k_table2(k_table, tables_list[0], 0, tn, tf)
-tn, tf = compute_k_table(k_table, 5000)
+tn, tf = compute_k_table(k_table, 10000)
 k_table = next_k_table2(k_table, tables_list[1], 1, tn, tf)
-tn, tf = compute_k_table(k_table, 5000)
+tn, tf = compute_k_table(k_table, 10000)
 k_table = next_k_table2(k_table, tables_list[2], 2, tn, tf)
-tn, tf = compute_k_table(k_table, 5000)
+tn, tf = compute_k_table(k_table, 10000)
 k_table = k_table[tn <= tf, :]
 
 np.testing.assert_almost_equal(k_table1, k_table)
 
 
+# evaluation
+nb_rays = 1000000
+ray_id = np.arange(0, nb_rays)
+ray_ori = np.random.rand(nb_rays, 3) * 10 - 5
+ray_dir = np.array([[1, 1.0, 1]]) + np.random.rand(nb_rays, 3) / 10
+ray_dir = ray_dir / np.linalg.norm(ray_dir)
+ray_inv_dir = 1 / ray_dir
+sort_pt = np.array([0, 3, -10])
+
+
+k_table = init_k_table(ray_ori, ray_inv_dir, tables_list[0])
+k_table = jax.device_put(jnp.array(k_table))
+tn, tf = compute_k_table(k_table, 10000)
+k_table = next_k_table2(k_table, tables_list[0], 0, tn, tf)
+tn, tf = compute_k_table(k_table, 10000)
+k_table = next_k_table2(k_table, tables_list[1], 1, tn, tf)
+tn, tf = compute_k_table(k_table, 10000)
+k_table = next_k_table2(k_table, tables_list[2], 2, tn, tf)
+
+# size (24 000 448, 14)
+t0 = time.time()
+tn, tf = compute_k_table(k_table, 100000)
+print(time.time() - t0)
+
+k_table = next_k_table2(k_table, tables_list[3], 3, tn, tf)
+
+t0 = time.time()
+
+
+
+print(time.time() - t0)
