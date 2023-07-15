@@ -56,6 +56,7 @@ nb = 500
 ori = ori[::1000, :]
 dir = dir[::1000, :]
 tmin = tmin[::1000]
+sh = sh[::1000, :]
 
 ori = np.array(ori)
 dir = np.array(dir)
@@ -69,7 +70,30 @@ for i in range(len(ori)):
     samples = ori[i, None] + tics[:, None] * dir[i, None]
     samples = np.clip(samples, 0, 254)
     interp = trilinear_interpolation_shuffle_zero(samples, npy_links, npy_data)
-    res_non.append(interp)
+    # res_non.append(interp)
+
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+
+    sigma = np.clip(sigma, a_min=0.0, a_max=100000)
+    rgb = rgb.reshape(-1, 3, 9)
+
+    sh_ray = sh[i][None, None, :]
+    rgb = rgb * sh_ray
+
+    rgb = np.sum(rgb, axis=2)
+    rgb = rgb + 0.5 #correction 1
+    rgb = np.clip(rgb, a_min=0.0, a_max=100000)
+    tmp = step_size * sigma * delta_scale
+
+    var = 1 - np.exp(-tmp)
+    Ti = np.exp(np.cumsum(-tmp))
+    Ti = Ti[:, None]
+    coefs = Ti * var
+    rgb = coefs * rgb
+    rgb = np.sum(rgb, axis=0)
+
+    res_non.append(rgb)
 res_non = np.stack(res_non, axis=0)
 
 
@@ -91,14 +115,15 @@ for i in np.arange(0, 800*800, 100):
     # res_non = np.concatenate(interp_non)
     # inter_samples_non.append(interp)
 
-    # sigma = interp[:, :1]
-    # rgb = interp[:, 1:]
-    #
-    # sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    # rgb = rgb.reshape(-1, 3, 9)
-    #
-    # sh_ray = sh[i][None, None, :]
-    # rgb = rgb * sh_ray
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+
+    sigma = np.clip(sigma, a_min=0.0, a_max=100000)
+    rgb = rgb.reshape(-1, 3, 9)
+
+    sh_ray = sh[i][None, None, :]
+    rgb = rgb * sh_ray
+
     # rgb = np.sum(rgb, axis=2)
     # rgb = rgb + 0.5 #correction 1
     # rgb = np.clip(rgb, a_min=0.0, a_max=100000)

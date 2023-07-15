@@ -107,17 +107,39 @@ def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     return out
 jit_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
 
-def main_to_vmap(ori, dir, tmin, max_dt, npy_links, npy_data):
+def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
     tics = jnp.linspace(tmin, max_dt + tmin, num=nb, dtype=jnp.float64)
     samples = ori[None, :] + tics[:, None] * dir[None, :]
     samples = jnp.clip(samples, 0, 254)
     interp = jit_interp(samples, npy_links, npy_data)
-    tmp = interp
-    return tmp
-jit_main = vmap(main_to_vmap, in_axes=(0, 0, 0, None, None, None))
+    interp = jnp.squeeze(interp)
 
-res = jit_main(ori, dir, tmin, max_dt, npy_links, npy_data)
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+
+    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+    rgb = rgb.reshape(-1, 3, 9)
+
+    sh_ray = sh[None, None, :]
+    rgb = rgb * sh_ray
+
+    rgb = jnp.sum(rgb, axis=2)
+    rgb = rgb + 0.5 #correction 1
+    rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
+    tmp = step_size * sigma * delta_scale
+
+    var = 1 - jnp.exp(-tmp)
+    Ti = jnp.exp(jnp.cumsum(-tmp))
+    Ti = Ti[:, None]
+    coefs = Ti * var
+    rgb = coefs * rgb
+    rgb = jnp.sum(rgb, axis=0)
+    return rgb
+jit_main = vmap(main_to_vmap, in_axes=(0, 0, 0, 0, None, None, None))
+
+res = jit_main(ori, dir, tmin, sh, max_dt, npy_links, npy_data)
 res = jnp.squeeze(res)
+
 np.testing.assert_almost_equal(res, res_non) # from step6.py
 
 
