@@ -317,16 +317,6 @@ geom_pcd = [{'name':'pcd', 'geometry':pcd}]
 vis.draw(geom_mipmap+geom_bbox+geom_pcd)
 
 
-for i in range(len(ori)):
-    tics = jnp.linspace(tmin[i], tmax[i], num=nb, dtype=jnp.float64)
-    samples = ori[None, :] + tics[:, None] * dir[None, :]
-    samples = jnp.clip(samples, 0, 254)
-
-
-
-colors = np.zeros([800*800, 3])
-max_dt = np.max(tmax - tmin)
-nb = 20
 
 # ori = ori[::1000, :]
 # dir = dir[::1000, :]

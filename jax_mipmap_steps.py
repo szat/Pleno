@@ -273,7 +273,7 @@ coords = coords[:, density_matrix > 0]
 coords = coords.reshape(3, -1).T
 pcd = o3d.geometry.PointCloud()
 pcd.points = o3d.utility.Vector3dVector(coords)
-# o3d.visualization.draw_geometries([bbox, pcd])
+o3d.visualization.draw_geometries([bbox, pcd])
 
 occupancy_voxels = create_occupancy_voxels(density_matrix)
 
@@ -281,6 +281,10 @@ occupancy_voxels = create_occupancy_voxels(density_matrix)
 mipmap = mipmap_compute(occupancy_voxels)
 mipmap.reverse()
 
+level = 3
+geom = viz_mipmap(mipmap, level, 256)
+import open3d.visualization as vis
+vis.draw(geom)
 
 def make_table_last(grid):
     x, y, z = np.where(grid)

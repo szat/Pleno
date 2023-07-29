@@ -122,7 +122,7 @@ img_size = 800
 batch_size = 1024
 nb_samples = 512
 
-rf = model.RadianceField(idim=512, nb_samples=nb_samples)
+rf = model.RadianceField(idim=512, nb_sh_channels=3, nb_samples=nb_samples)
 data = np.load(path_to_weigths, allow_pickle=True)
 
 # Access data arrays using keys
