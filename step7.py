@@ -170,19 +170,15 @@ tmp_rgb2 = jnp.zeros([800*800, 3])
 #     # tmp_rgb.append(res)
 
 
-# tmp_rgb = []
+tmp_rgb = []
 for i in range(int(batch_nb - 1)):
-    # i = 0
-    # with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
-        t0= time.time()
-        res = jit_main(ori[i * batch_size: (i + 1) * batch_size],
-                       dir[i * batch_size: (i + 1) * batch_size],
-                       tmin[i * batch_size: (i + 1) * batch_size],
-                       sh[i * batch_size: (i + 1) * batch_size],
-                       max_dt, npy_links, npy_data)
-        res.block_until_ready()
-        print(time.time() - t0)
-    # tmp_rgb.append(res)
+    res = jit_main(ori[i * batch_size: (i + 1) * batch_size],
+                   dir[i * batch_size: (i + 1) * batch_size],
+                   tmin[i * batch_size: (i + 1) * batch_size],
+                   sh[i * batch_size: (i + 1) * batch_size],
+                   max_dt, npy_links, npy_data)
+    res.block_until_ready()
+    tmp_rgb.append(res)
 
 last_dab = len(ori) - (batch_nb - 1) * batch_size
 res = jit_main(ori[int((batch_nb - 1) * batch_size):],
@@ -195,60 +191,59 @@ colors = np.concatenate(tmp_rgb)
 
 img = colors.reshape([800,800,3])
 import cv2
-# if nb_sh_channels == 2:
-#     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
 img = (img * 255).astype(np.uint8)
-# if nb_sh_channels == 3:
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-t0 = time.time()
-res = jit_main(ori[:5000], dir[:5000], tmin[:5000], sh[:5000], max_dt, npy_links, npy_data)
-print(time.time() - t0)
 
+
+# t0 = time.time()
+# res = jit_main(ori[:5000], dir[:5000], tmin[:5000], sh[:5000], max_dt, npy_links, npy_data)
+# print(time.time() - t0)
 #
+# #
+# #
+# # inter_samples_jax = []
+# for i in range(800*800):
+#     # x = max_dt + tmin[i] - tmax[i]
+#     tics = jnp.linspace(tmin[i], max_dt + tmin[i], num=nb)
+#     samples = ori[i, None] + tics[:, None] * dir[i, None]
+#     samples = jnp.clip(samples, 0, 254)
+#     samples = jnp.array(samples)
+#     interp = jit_interp(samples, npy_links, npy_data, jnp.zeros(3), jnp.ones(3))
 #
-# inter_samples_jax = []
-for i in range(800*800):
-    # x = max_dt + tmin[i] - tmax[i]
-    tics = jnp.linspace(tmin[i], max_dt + tmin[i], num=nb)
-    samples = ori[i, None] + tics[:, None] * dir[i, None]
-    samples = jnp.clip(samples, 0, 254)
-    samples = jnp.array(samples)
-    interp = jit_interp(samples, npy_links, npy_data, jnp.zeros(3), jnp.ones(3))
-
-    # inter_samples_jax.append(interp)
-    # for i in range(len(inter_samples_jax)):
-    #     np.testing.assert_almost_equal(inter_samples_non[i], inter_samples_jax[i])
-
-    sigma = interp[:, :1]
-    rgb = interp[:, 1:]
-
-    sigma = np.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = rgb.reshape(-1, 3, 9)
-
-    sh_ray = sh[i][None, None, :]
-    rgb = rgb * sh_ray
-    rgb = np.sum(rgb, axis=2)
-    rgb = rgb + 0.5 #correction 1
-    rgb = np.clip(rgb, a_min=0.0, a_max=100000)
-    tmp = step_size * sigma * delta_scale
-    # tmp = np.clip(tmp, a_min=0.0, a_max=100000)
-    var = 1 - np.exp(-tmp)
-    Ti = np.exp(np.cumsum(-tmp))
-    Ti = Ti[:, None]
-    coefs = Ti * var
-    rgb = coefs * rgb
-    rgb = np.sum(rgb, axis=0)
-    colors[i] = rgbnpy_links
-
-img = colors.reshape([800,800,3])
-import cv2
-# if nb_sh_channels == 2:
-#     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
-img = (img * 255).astype(np.uint8)
-# if nb_sh_channels == 3:
-img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#     # inter_samples_jax.append(interp)
+#     # for i in range(len(inter_samples_jax)):
+#     #     np.testing.assert_almost_equal(inter_samples_non[i], inter_samples_jax[i])
+#
+#     sigma = interp[:, :1]
+#     rgb = interp[:, 1:]
+#
+#     sigma = np.clip(sigma, a_min=0.0, a_max=100000)
+#     rgb = rgb.reshape(-1, 3, 9)
+#
+#     sh_ray = sh[i][None, None, :]
+#     rgb = rgb * sh_ray
+#     rgb = np.sum(rgb, axis=2)
+#     rgb = rgb + 0.5 #correction 1
+#     rgb = np.clip(rgb, a_min=0.0, a_max=100000)
+#     tmp = step_size * sigma * delta_scale
+#     # tmp = np.clip(tmp, a_min=0.0, a_max=100000)
+#     var = 1 - np.exp(-tmp)
+#     Ti = np.exp(np.cumsum(-tmp))
+#     Ti = Ti[:, None]
+#     coefs = Ti * var
+#     rgb = coefs * rgb
+#     rgb = np.sum(rgb, axis=0)
+#     colors[i] = rgbnpy_links
+#
+# img = colors.reshape([800,800,3])
+# import cv2
+# # if nb_sh_channels == 2:
+# #     img = np.concatenate((img, np.zeros((img_size, img_size, 1)) + 0.5), axis=2)
+# img = (img * 255).astype(np.uint8)
+# # if nb_sh_channels == 3:
+# img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 #
 #
 #

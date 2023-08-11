@@ -136,6 +136,7 @@ class RadianceField(torch.nn.Module):
         ray_origins = ray_origins.to(self.device)
         ray_dirs = ray_dirs.to(self.device)
         color_batched = []
+        samples_batched = []
         with torch.no_grad():
             for batch_start in range(0, ray_dirs.shape[0], batch_size):
                 batch_end = min(batch_start + batch_size, ray_dirs.shape[0])
@@ -147,7 +148,12 @@ class RadianceField(torch.nn.Module):
                 tmin_batched = tmin_batched.to(self.device)
                 tmax_batched = tmax[batch_start:batch_end]
                 tmax_batched = tmax_batched.to(self.device)
-                color_batched.append(self(origins_batched, dirs_batched,tmin_batched, tmax_batched).cpu())
+                colors = self(origins_batched, dirs_batched,tmin_batched, tmax_batched)
+                colors = colors.cpu()
+                # sample = sample.cpu()
+
+                color_batched.append(colors)
+                # samples_batched.append(sample)
 
         return torch.cat(color_batched)
 
