@@ -210,6 +210,23 @@ box_min = np.zeros(rays_origins.shape)
 box_max = np.ones(rays_origins.shape)*(size_model - 2)
 ray_inv_dirs = 1. / rays_dirs
 tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
+
+# make the sampling test much smaller
+# import numpy as np
+# canvas = np.zeros([800, 800])
+# canvas[::2, ::2] = 1
+# mask = np.zeros([800, 800])
+# mask[200:-200, 200:-200] = 1
+# canvas = canvas * mask
+# canvas = canvas.flatten()
+# mask = canvas == 1
+
+rays_origins = rays_origins[mask]
+rays_dirs = rays_dirs[mask]
+ray_inv_dirs = ray_inv_dirs[mask]
+tmin = tmin[mask]
+tmax = tmax[mask]
+
 mask = tmin < tmax
 valid_rays_origins = torch.from_numpy(rays_origins[mask])
 valid_rays_dirs = torch.from_numpy(rays_dirs[mask])
@@ -232,11 +249,15 @@ valid_tmax = torch.from_numpy(tmax[mask])
 
 # rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size).numpy()
 import time
-t0 = time.time()
+# t0 = time.time()
+
+# rendered_rays, samples, sh, interp_sh_coeff, interp_opacities = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size)
 rendered_rays = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size)
 rendered_rays = rendered_rays.numpy()
+
+
 # rendered_sh = rendered_sh.numpy()
-print(time.time() - t0)
+
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = rendered_rays
 max_val = np.max(complete_colors)
@@ -246,6 +267,8 @@ print("min px val:", min_val)
 complete_colors[complete_colors > 1] = 1
 complete_colors[complete_colors < 0] = 0
 
+img_size2 = 400
+img_size = img_size2
 img = np.reshape(complete_colors, (img_size, img_size, nb_sh_channels))
 img = (img * 255).astype(np.uint8)
 if nb_sh_channels == 2:

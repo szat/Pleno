@@ -22,6 +22,7 @@ data = np.load(path, allow_pickle=True)
 npy_radius = data['radius']
 npy_center = data['center']
 npy_links = data['links']
+npy_links = npy_links[::2, ::2, ::2]
 npy_density_data = data['density_data']
 npy_sh_data = data['sh_data']
 npy_basis_type = data['basis_type']

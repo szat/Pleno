@@ -77,7 +77,7 @@ class RadianceField(torch.nn.Module):
         self.criterion = torch.nn.MSELoss(reduction='mean')
         self.optimizer = torch.optim.RMSprop(self.parameters(), lr=1e-6)
 
-    def forward(self, x: torch.Tensor, d: torch.Tensor, tmin: torch.Tensor, tmax: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, d: torch.Tensor, tmin: torch.Tensor, tmax: torch.Tensor, get_samples=False) -> torch.Tensor:
         """
         x, d define origins and directions of rays
         """
@@ -90,22 +90,20 @@ class RadianceField(torch.nn.Module):
         tmax = tmax.reshape((-1, 1))
         samples = (tmax - tmin) * samples + tmin
         sample_points = build_samples(x, d, samples)
+        extra = sample_points
+
 
                 # evaluations harmonics are done at each ray direction:
                 # with record_function("sh_part"):
         sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
         sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
-
         sample_points = torch.flatten(sample_points, 0, 1)
-
-                # with record_function("tri_grid_part"):
         interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
-                # with record_function("tri_density_part"):
         interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
         interp_opacities = torch.clamp(interp_opacities, 0, 100000)
 
-                # nb_rays x nb_samples x nb_channels*num_sh
-                # with record_function("addition_part"):
+        # nb_rays x nb_samples x nb_channels*num_sh
+        # with record_function("addition_part"):
         interp_sh_coeffs = interp_sh_coeffs.reshape((nb_rays, samples.shape[1], 9*self.nb_sh_channels))
         interp_opacities = interp_opacities.reshape((nb_rays, samples.shape[1])) # nb_rays x nb_samples
         interp_harmonics = interp_sh_coeffs * sh.unsqueeze(1)
@@ -125,11 +123,14 @@ class RadianceField(torch.nn.Module):
                                dim=1)
         # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
         # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-        return rays_color
+        if get_samples:
+            return rays_color, extra
+        else:
+            return rays_color
 
     def render_rays(self, ray_origins: torch.Tensor, ray_dirs: torch.Tensor,
                     tmin: torch.Tensor, tmax: torch.Tensor,
-                    batch_size: int) -> torch.Tensor:
+                    batch_size: int, get_samples=False) -> torch.Tensor:
 
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]):
         #     with record_function("total_render"):
@@ -137,6 +138,9 @@ class RadianceField(torch.nn.Module):
         ray_dirs = ray_dirs.to(self.device)
         color_batched = []
         samples_batched = []
+        sh_batched = []
+        interp_sh_coeffs_batched = []
+        interp_opacities_batched = []
         with torch.no_grad():
             for batch_start in range(0, ray_dirs.shape[0], batch_size):
                 batch_end = min(batch_start + batch_size, ray_dirs.shape[0])
@@ -148,14 +152,16 @@ class RadianceField(torch.nn.Module):
                 tmin_batched = tmin_batched.to(self.device)
                 tmax_batched = tmax[batch_start:batch_end]
                 tmax_batched = tmax_batched.to(self.device)
-                colors = self(origins_batched, dirs_batched,tmin_batched, tmax_batched)
-                colors = colors.cpu()
-                # sample = sample.cpu()
-
-                color_batched.append(colors)
-                # samples_batched.append(sample)
-
-        return torch.cat(color_batched)
+                if get_samples:
+                    colors, extra = self(origins_batched, dirs_batched,tmin_batched, tmax_batched, True)
+                    colors = colors.cpu()
+                    color_batched.append(colors)
+                    return torch.cat(color_batched), extra
+                else:
+                    colors = self(origins_batched, dirs_batched,tmin_batched, tmax_batched)
+                    colors = colors.cpu()
+                    color_batched.append(colors)
+                    return torch.cat(color_batched)
 
     def total_variation(self, voxels_ijk_tv: torch.Tensor) -> Tuple[float, float]:
 
