@@ -90,16 +90,19 @@ class RadianceField(torch.nn.Module):
         tmax = tmax.reshape((-1, 1))
         samples = (tmax - tmin) * samples + tmin
         sample_points = build_samples(x, d, samples)
-        extra = sample_points
-
+        extra = []
+        extra.append({"name":"sample_points", "value":sample_points})
 
                 # evaluations harmonics are done at each ray direction:
                 # with record_function("sh_part"):
         sh = eval_sh_bases(d, self.SH_C0, self.SH_C1, self.SH_C2, self.SH_C3, self.SH_C4)
+        extra.append({"name": "sh", "value": sh})
         sh = sh.repeat(1, self.nb_sh_channels) # nb_rays x nb_channels*nb_sh
         sample_points = torch.flatten(sample_points, 0, 1)
         interp_sh_coeffs = trilinear_interpolation(sample_points, self.grid, self.box_min, self.delta_voxel)
         interp_opacities = trilinear_interpolation(sample_points, self.opacity, self.box_min, self.delta_voxel)
+        extra.append({"name": "interp_sh_coeffs", "value": interp_sh_coeffs})
+        extra.append({"name": "interp_opacities", "value": interp_opacities})
         interp_opacities = torch.clamp(interp_opacities, 0, 100000)
 
         # nb_rays x nb_samples x nb_channels*num_sh
@@ -111,16 +114,21 @@ class RadianceField(torch.nn.Module):
 
         # render with interp_harmonics and interp_opacities:
         deltas = samples[:, 1:] - samples[:, :-1]
+        extra.append({"name": "deltas", "value": deltas})
         deltas_times_sigmas = deltas * interp_opacities[:, :-1]
         deltas_times_sigmas = -deltas_times_sigmas
+        extra.append({"name": "deltas_times_sigmas", "value": deltas_times_sigmas})
         cum_weighted_deltas = torch.cumsum(deltas_times_sigmas, dim=1)
         cum_weighted_deltas = torch.cat([torch.zeros((nb_rays, 1), device=self.device), cum_weighted_deltas[:, :-1]], dim=1)
+        extra.append({"name": "cum_weighted_deltas", "value": cum_weighted_deltas})
         deltas_times_sigmas = deltas_times_sigmas.unsqueeze(2)
         cum_weighted_deltas = cum_weighted_deltas.unsqueeze(2)
         samples_color = torch.clamp(torch.sum(interp_harmonics, dim=3) + 0.5, 0.0, 100000)
+        extra.append({"name": "samples_color", "value": samples_color})
         rays_color = torch.sum(torch.exp(cum_weighted_deltas) *
                                (1 - torch.exp(deltas_times_sigmas)) * samples_color[:, :-1, :],
                                dim=1)
+        extra.append({"name": "rays_color", "value": rays_color})
         # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
         # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
         if get_samples:

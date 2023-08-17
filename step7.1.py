@@ -7,7 +7,7 @@ import numpy as np
 from sampling_branch import intersect_ray_aabb
 import model
 
-if_torch = True
+if_torch = False
 if if_torch:
     import torch
     torch.cuda.empty_cache()
@@ -94,7 +94,24 @@ if if_torch:
     get_samples = True
     rendered_rays, extra = rf.render_rays(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, batch_size, get_samples)
     rendered_rays = rendered_rays.numpy()
+    for i, slice in enumerate(extra):
+        np.save(folder + "try_" + str(i) + "_" + slice["name"], np.array(slice["value"].cpu()))
 
+    torch_rays = np.array(rendered_rays)
+    torch_samples = np.array(extra[0].cpu())
+    torch_sh = np.array(extra[1].cpu())
+    torch_interp_sh = np.array(extra[2].cpu())
+    torch_interp_opacities = np.array(extra[3].cpu())
+else:
+    extra = {}
+    try_files = [file for file in os.listdir(folder) if file.startswith('try')]
+    for file in try_files:
+        file_path = os.path.join(folder, file)
+        if os.path.isfile(file_path):
+            filename = os.path.basename(file_path)
+            extra[filename] = np.load(file_path)
+
+torch_rays = np.load(folder+"torch_rays.npy")
 
 from jax import grad, jit, vmap
 from jax.config import config
@@ -108,6 +125,9 @@ max_dt = np.max(tmax - tmin)
 nb = 100
 step_size = 0.5
 delta_scale = 1/256
+
+my_sh = eval_sh_bases_mine(valid_rays_dirs)
+np.testing.assert_almost_equal(my_sh, extra["try_1_sh.npy"])
 
 def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     # xyz = vecs - origin
@@ -153,10 +173,41 @@ def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     return out
 jit_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
 
+samples2 = torch_samples.reshape(-1, 3)
+interp = jit_interp(samples2, npy_links, npy_data)
+interp = np.squeeze(interp)
+
+np.testing.assert_almost_equal(torch_interp_opacities, interp[:, :1][None, :, :])
+np.testing.assert_almost_equal(torch_interp_sh, interp[:, 1:][None, :, :])
+
 def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
     tics = jnp.linspace(tmin, max_dt + tmin, num=nb, dtype=jnp.float64)
     samples = ori[None, :] + tics[:, None] * dir[None, :]
     samples = jnp.clip(samples, 0, 254)
+    interp = jit_interp(samples, npy_links, npy_data)
+    interp = jnp.squeeze(interp)
+
+    sigma = interp[:, :1]
+    rgb = interp[:, 1:]
+
+    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+    rgb = rgb.reshape(-1, 3, 9)
+    rgb = rgb * sh[None, None, :]
+    rgb = jnp.sum(rgb, axis=2)
+    rgb = rgb + 0.5 #correction 1
+    rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
+    tmp = step_size * sigma * delta_scale
+
+    var = 1 - jnp.exp(-tmp)
+    Ti = jnp.exp(jnp.cumsum(-tmp))
+    Ti = Ti[:, None]
+    coefs = Ti * var
+    rgb = coefs * rgb
+    rgb = jnp.sum(rgb, axis=0)
+    return rgb
+jit_main = jit(vmap(main_to_vmap, in_axes=(0, 0, 0, 0, None, None, None)))
+
+def main_to_vmap_samples_provided(samples, sh, npy_links, npy_data):
     interp = jit_interp(samples, npy_links, npy_data)
     interp = jnp.squeeze(interp)
 
@@ -181,35 +232,45 @@ def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
     rgb = coefs * rgb
     rgb = jnp.sum(rgb, axis=0)
     return rgb
-jit_main = jit(vmap(main_to_vmap, in_axes=(0, 0, 0, 0, None, None, None)))
+jit_samples_main = jit(vmap(main_to_vmap_samples_provided, in_axes=(0, 0, None, None)))
 
-ori = jax.device_put(jnp.array(valid_rays_origins))
-dir = jax.device_put(jnp.array(valid_rays_dirs))
-tmin = jax.device_put(jnp.array(valid_tmin))
+
+# ori = jax.device_put(jnp.array(valid_rays_origins))
+# dir = jax.device_put(jnp.array(valid_rays_dirs))
+# tmin = jax.device_put(jnp.array(valid_tmin))
 npy_links = jax.device_put(jnp.array(npy_links))
 npy_data = jax.device_put(jnp.array(npy_data))
+torch_samples = jax.device_put(jnp.array(torch_samples))
+valid_sh = jax.device_put(jnp.array(valid_sh))
+# sh_mine = eval_sh_bases_mine(np.array(valid_rays_dirs))
+# sh_mine = jax.device_put(jnp.array(sh_mine))
 
-batch_size = 5000
-batch_nb = jnp.ceil(len(ori) / batch_size)
+res = jit_samples_main(torch_samples, valid_sh, npy_links, npy_data)
 
-tmp_rgb = []
-for i in range(int(batch_nb - 1)):
-    res = jit_main(ori[i * batch_size: (i + 1) * batch_size],
-                   dir[i * batch_size: (i + 1) * batch_size],
-                   tmin[i * batch_size: (i + 1) * batch_size],
-                   sh_mine[i * batch_size: (i + 1) * batch_size],
-                   max_dt, npy_links, npy_data)
-    res.block_until_ready()
-    tmp_rgb.append(res)
+np.testing.assert_almost_equal(res, torch_rays)
 
-last_dab = len(ori) - (batch_nb - 1) * batch_size
-res = jit_main(ori[int((batch_nb - 1) * batch_size):],
-               dir[int((batch_nb - 1) * batch_size):],
-               tmin[int((batch_nb - 1) * batch_size):],
-               sh_mine[int((batch_nb - 1) * batch_size):],
-               max_dt, npy_links, npy_data)
-tmp_rgb.append(res)
-colors = np.concatenate(tmp_rgb)
+#
+# batch_size = 5000
+# batch_nb = jnp.ceil(len(ori) / batch_size)
+#
+# tmp_rgb = []
+# for i in range(int(batch_nb - 1)):
+#     res = jit_main(ori[i * batch_size: (i + 1) * batch_size],
+#                    dir[i * batch_size: (i + 1) * batch_size],
+#                    tmin[i * batch_size: (i + 1) * batch_size],
+#                    sh_mine[i * batch_size: (i + 1) * batch_size],
+#                    max_dt, npy_links, npy_data)
+#     res.block_until_ready()
+#     tmp_rgb.append(res)
+#
+# last_dab = len(ori) - (batch_nb - 1) * batch_size
+# res = jit_main(ori[int((batch_nb - 1) * batch_size):],
+#                dir[int((batch_nb - 1) * batch_size):],
+#                tmin[int((batch_nb - 1) * batch_size):],
+#                sh_mine[int((batch_nb - 1) * batch_size):],
+#                max_dt, npy_links, npy_data)
+# tmp_rgb.append(res)
+# colors = np.concatenate(tmp_rgb)
 
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = colors
