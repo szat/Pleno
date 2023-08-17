@@ -175,6 +175,7 @@ jit_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
 
 # samples2 = torch_samples.reshape(-1, 3)
 sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
+# sample_points = extra["try_1_sample_points.npy"]
 interp = jit_interp(sample_points, npy_links, npy_data)
 interp = np.squeeze(interp)
 interp_sh_coeffs = interp[:, 1:][None, :, :]
@@ -214,9 +215,45 @@ rays_color = jnp.sum(tmp1[:, :, None] * tmp2[:, :, None] * samples_colors[:, :-1
 np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], rays_color)
 
 
+sample_points_in = sample_points[0]
+samples_in = samples[0]
+my_sh_in = my_sh[0]
+npy_links_in = npy_links
+npy_data_in = npy_data
 
+def conv_to_vmap(samples_in, sample_points_in, my_sh_in, npy_links_in, npy_data_in):
+    interp = jit_interp(sample_points_in, npy_links_in, npy_data_in)
+    # out = interp
+    interp = np.squeeze(interp)
+    interp_sh_coeffs = interp[:, 1:][None, :, :]
+    interp_opacities = interp[:, :1][None, :, :]
+    interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
+    deltas = samples_in[1:] - samples_in[:-1]
 
+    interp_sh_coeffs = interp_sh_coeffs.reshape(1, samples.shape[1], 3, 9)
+    interp_opacities = interp_opacities.reshape(1, samples.shape[1], 1)
+    interp_harmonics = interp_sh_coeffs * my_sh_in[None, None, None, :]
 
+    interp_opacities = jnp.squeeze(interp_opacities)
+
+    deltas_times_sigmas = - deltas * interp_opacities[:-1]
+
+    cum_weighted_deltas = jnp.cumsum(deltas_times_sigmas)
+    cum_weighted_deltas = jnp.concatenate([jnp.zeros(1), cum_weighted_deltas[:-1]])
+
+    samples_colors = jnp.clip(jnp.sum(interp_harmonics, axis=3) + 0.5, a_min=0.0, a_max=100000)
+    samples_colors = jnp.squeeze(samples_colors)
+    deltas_times_sigmas = jnp.squeeze(deltas_times_sigmas)
+    tmp1 = jnp.exp(cum_weighted_deltas)
+    tmp2 = 1 - jnp.exp(deltas_times_sigmas)
+    rays_color = jnp.sum(tmp1[:, None] * tmp2[:, None] * samples_colors[:-1], axis=0)
+    out = rays_color
+    return out
+
+jit_again = jit(vmap(conv_to_vmap, in_axes=(0, 0, 0, None, None)))
+
+res = jit_again(samples, sample_points, my_sh, npy_links, npy_data)
+np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], res)
 
 
 def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
