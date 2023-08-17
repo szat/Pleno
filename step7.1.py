@@ -98,10 +98,10 @@ if if_torch:
         np.save(folder + "try_" + str(i) + "_" + slice["name"], np.array(slice["value"].cpu()))
 
     torch_rays = np.array(rendered_rays)
-    torch_samples = np.array(extra[0].cpu())
-    torch_sh = np.array(extra[1].cpu())
-    torch_interp_sh = np.array(extra[2].cpu())
-    torch_interp_opacities = np.array(extra[3].cpu())
+    # torch_samples = np.array(extra[0].cpu())
+    # torch_sh = np.array(extra[1].cpu())
+    # torch_interp_sh = np.array(extra[2].cpu())
+    # torch_interp_opacities = np.array(extra[3].cpu())
 else:
     extra = {}
     try_files = [file for file in os.listdir(folder) if file.startswith('try')]
@@ -127,7 +127,7 @@ step_size = 0.5
 delta_scale = 1/256
 
 my_sh = eval_sh_bases_mine(valid_rays_dirs)
-np.testing.assert_almost_equal(my_sh, extra["try_1_sh.npy"])
+np.testing.assert_almost_equal(my_sh, extra["try_2_sh.npy"])
 
 def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     # xyz = vecs - origin
@@ -173,12 +173,51 @@ def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     return out
 jit_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
 
-samples2 = torch_samples.reshape(-1, 3)
-interp = jit_interp(samples2, npy_links, npy_data)
+# samples2 = torch_samples.reshape(-1, 3)
+sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
+interp = jit_interp(sample_points, npy_links, npy_data)
 interp = np.squeeze(interp)
+interp_sh_coeffs = interp[:, 1:][None, :, :]
+interp_opacities = interp[:, :1][None, :, :]
 
-np.testing.assert_almost_equal(torch_interp_opacities, interp[:, :1][None, :, :])
-np.testing.assert_almost_equal(torch_interp_sh, interp[:, 1:][None, :, :])
+np.testing.assert_almost_equal(extra["try_3_interp_sh_coeffs.npy"], interp_sh_coeffs)
+np.testing.assert_almost_equal(extra["try_4_interp_opacities.npy"], interp_opacities)
+
+interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
+
+samples = extra["try_0_samples.npy"]
+deltas = samples[:, 1:] - samples[:, :-1]
+
+np.testing.assert_almost_equal(extra["try_5_deltas.npy"], deltas)
+
+interp_sh_coeffs = interp_sh_coeffs.reshape((samples.shape[0], samples.shape[1], 3, 9))
+interp_opacities = interp_opacities.reshape((samples.shape[0], samples.shape[1], 1))
+interp_harmonics = interp_sh_coeffs * my_sh[:, None, None, :]
+
+deltas_times_sigmas = - deltas[:, :, None] * interp_opacities[:, :-1]
+np.testing.assert_almost_equal(extra["try_6_deltas_times_sigmas.npy"][:, :, None], deltas_times_sigmas)
+
+cum_weighted_deltas = jnp.cumsum(deltas_times_sigmas, axis=1)
+cum_weighted_deltas = jnp.squeeze(cum_weighted_deltas)
+tmp = jnp.zeros([1600, 1])
+cum_weighted_deltas = jnp.concatenate([tmp, cum_weighted_deltas[:, :-1]], axis=1)
+np.testing.assert_almost_equal(extra["try_7_cum_weighted_deltas.npy"], cum_weighted_deltas)
+
+samples_colors = jnp.clip(jnp.sum(interp_harmonics, axis=3) + 0.5, a_min=0.0, a_max=100000)
+np.testing.assert_almost_equal(extra["try_8_samples_color.npy"], samples_colors)
+
+deltas_times_sigmas = jnp.squeeze(deltas_times_sigmas)
+tmp1 = jnp.exp(cum_weighted_deltas)
+tmp2 = 1 - jnp.exp(deltas_times_sigmas)
+rays_color = jnp.sum(tmp1[:, :, None] * tmp2[:, :, None] * samples_colors[:, :-1, :], axis=1)
+
+np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], rays_color)
+
+
+
+
+
+
 
 def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
     tics = jnp.linspace(tmin, max_dt + tmin, num=nb, dtype=jnp.float64)

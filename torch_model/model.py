@@ -83,14 +83,15 @@ class RadianceField(torch.nn.Module):
         """
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
         #     with record_function("total_forward"):
+        extra = []
         nb_rays = x.shape[0]
         samples = torch.arange(start=0.05, end=0.95, step=1/self.nb_samples, device=self.device, dtype=x.dtype)
         samples = samples.unsqueeze(0).expand(nb_rays, samples.shape[0])
         tmin = tmin.reshape((-1, 1))
         tmax = tmax.reshape((-1, 1))
         samples = (tmax - tmin) * samples + tmin
+        extra.append({"name": "samples", "value": samples})
         sample_points = build_samples(x, d, samples)
-        extra = []
         extra.append({"name":"sample_points", "value":sample_points})
 
                 # evaluations harmonics are done at each ray direction:
