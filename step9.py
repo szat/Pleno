@@ -174,41 +174,7 @@ def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
 jit_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
 
 # samples2 = torch_samples.reshape(-1, 3)
-
-# valid_rays_dirs = valid_rays_dirs / np.linalg.norm(valid_rays_dirs, axis = 0)
-
-tics = extra["try_00_tics.npy"]
-tics = jnp.array(tics)
-np.testing.assert_almost_equal(extra["try_00_tics.npy"], tics)
-
-tmin = valid_tmin[0]
-tmax = valid_tmax[0]
-samples_2 = (tmax - tmin) * tics + tmin
-rays_dirs = valid_rays_dirs[0]
-rays_origins = valid_rays_origins[0]
-tmp = jnp.matmul(samples_2[:, None], rays_dirs[None, :], precision='highest')
-tmp = jnp.add(tmp, rays_origins[None, :])
-
-tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
-tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
-sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
-np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
-
-
-
-samples = extra["try_0_samples.npy"]
-np.testing.assert_almost_equal(samples, samples_2)
-
-tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
-tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
-sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
-np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
-
-
-
-# sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
-sample_points = tmp.reshape((-1, 3))
-
+sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
 # sample_points = extra["try_1_sample_points.npy"]
 interp = jit_interp(sample_points, npy_links, npy_data)
 interp = np.squeeze(interp)
@@ -220,7 +186,7 @@ np.testing.assert_almost_equal(extra["try_4_interp_opacities.npy"], interp_opaci
 
 interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
 
-
+samples = extra["try_0_samples.npy"]
 deltas = samples[:, 1:] - samples[:, :-1]
 
 np.testing.assert_almost_equal(extra["try_5_deltas.npy"], deltas)
@@ -248,25 +214,17 @@ rays_color = jnp.sum(tmp1[:, :, None] * tmp2[:, :, None] * samples_colors[:, :-1
 
 np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], rays_color)
 
-
-
-def conv_to_vmap(ori, dir, tmin, tmax, my_sh_in, npy_links_in, npy_data_in):
-    samples = (tmax - tmin) * tics + tmin
-    tmp = jnp.matmul(samples[:, None], dir[None, :], precision='highest')
-    tmp = jnp.add(tmp, ori[None, :])
-
-    sample_points_in = tmp
-
+def conv_to_vmap(samples_in, sample_points_in, my_sh_in, npy_links_in, npy_data_in):
     interp = jit_interp(sample_points_in, npy_links_in, npy_data_in)
     # out = interp
     interp = np.squeeze(interp)
     interp_sh_coeffs = interp[:, 1:][None, :, :]
     interp_opacities = interp[:, :1][None, :, :]
     interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
-    deltas = samples[1:] - samples[:-1]
+    deltas = samples_in[1:] - samples_in[:-1]
 
-    interp_sh_coeffs = interp_sh_coeffs.reshape(1, samples.shape[0], 3, 9)
-    interp_opacities = interp_opacities.reshape(1, samples.shape[0], 1)
+    interp_sh_coeffs = interp_sh_coeffs.reshape(1, samples.shape[1], 3, 9)
+    interp_opacities = interp_opacities.reshape(1, samples.shape[1], 1)
     interp_harmonics = interp_sh_coeffs * my_sh_in[None, None, None, :]
 
     interp_opacities = jnp.squeeze(interp_opacities)
@@ -285,12 +243,10 @@ def conv_to_vmap(ori, dir, tmin, tmax, my_sh_in, npy_links_in, npy_data_in):
     out = rays_color
     return out
 
-jit_again = jit(vmap(conv_to_vmap, in_axes=(0, 0, 0, 0, 0, None, None)))
-
-
+jit_again = jit(vmap(conv_to_vmap, in_axes=(0, 0, 0, None, None)))
 
 sample_points = sample_points.reshape([1600, 461, 3])
-res = jit_again(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, my_sh, npy_links, npy_data)
+res = jit_again(samples, sample_points, my_sh, npy_links, npy_data)
 np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], res)
 
 
