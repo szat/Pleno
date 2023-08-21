@@ -64,13 +64,17 @@ tmax = np.load(folder + "all_tmax.npy")
 from spherical_harmonics import eval_sh_bases_mine
 sh_mine = eval_sh_bases_mine(rays_dirs)
 
-canvas = np.zeros([800, 800])
-canvas[::10, ::10] = 1
-mask = np.zeros([800, 800])
-mask[200:-200, 200:-200] = 1
-canvas = canvas * mask
-canvas = canvas.flatten()
-mask = canvas == 1
+# canvas = np.zeros([800, 800])
+# canvas[::10, ::10] = 1
+# mask = np.zeros([800, 800])
+# mask[200:-200, 200:-200] = 1
+# canvas = canvas * mask
+# canvas = canvas.flatten()
+# mask = canvas == 1
+
+mask = np.ones([800, 800])
+mask = mask == 1
+mask = mask.flatten()
 
 valid_rays_origins = rays_origins[mask]
 valid_rays_dirs = rays_dirs[mask]
@@ -127,7 +131,7 @@ step_size = 0.5
 delta_scale = 1/256
 
 my_sh = eval_sh_bases_mine(valid_rays_dirs)
-np.testing.assert_almost_equal(my_sh, extra["try_2_sh.npy"])
+# np.testing.assert_almost_equal(my_sh, extra["try_2_sh.npy"])
 
 def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     # xyz = vecs - origin
@@ -181,72 +185,72 @@ tics = extra["try_00_tics.npy"]
 tics = jnp.array(tics)
 np.testing.assert_almost_equal(extra["try_00_tics.npy"], tics)
 
-tmin = valid_tmin[0]
-tmax = valid_tmax[0]
-samples_2 = (tmax - tmin) * tics + tmin
-rays_dirs = valid_rays_dirs[0]
-rays_origins = valid_rays_origins[0]
-tmp = jnp.matmul(samples_2[:, None], rays_dirs[None, :], precision='highest')
-tmp = jnp.add(tmp, rays_origins[None, :])
-
-tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
-tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
-sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
-np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
-
-
-
-samples = extra["try_0_samples.npy"]
-np.testing.assert_almost_equal(samples, samples_2)
-
-tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
-tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
-sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
-np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
-
-
-
-# sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
-sample_points = tmp.reshape((-1, 3))
-
-# sample_points = extra["try_1_sample_points.npy"]
-interp = jit_interp(sample_points, npy_links, npy_data)
-interp = np.squeeze(interp)
-interp_sh_coeffs = interp[:, 1:][None, :, :]
-interp_opacities = interp[:, :1][None, :, :]
-
-np.testing.assert_almost_equal(extra["try_3_interp_sh_coeffs.npy"], interp_sh_coeffs)
-np.testing.assert_almost_equal(extra["try_4_interp_opacities.npy"], interp_opacities)
-
-interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
-
-
-deltas = samples[:, 1:] - samples[:, :-1]
-
-np.testing.assert_almost_equal(extra["try_5_deltas.npy"], deltas)
-
-interp_sh_coeffs = interp_sh_coeffs.reshape((samples.shape[0], samples.shape[1], 3, 9))
-interp_opacities = interp_opacities.reshape((samples.shape[0], samples.shape[1], 1))
-interp_harmonics = interp_sh_coeffs * my_sh[:, None, None, :]
-
-deltas_times_sigmas = - deltas[:, :, None] * interp_opacities[:, :-1]
-np.testing.assert_almost_equal(extra["try_6_deltas_times_sigmas.npy"][:, :, None], deltas_times_sigmas)
-
-cum_weighted_deltas = jnp.cumsum(deltas_times_sigmas, axis=1)
-cum_weighted_deltas = jnp.squeeze(cum_weighted_deltas)
-tmp = jnp.zeros([1600, 1])
-cum_weighted_deltas = jnp.concatenate([tmp, cum_weighted_deltas[:, :-1]], axis=1)
-np.testing.assert_almost_equal(extra["try_7_cum_weighted_deltas.npy"], cum_weighted_deltas)
-
-samples_colors = jnp.clip(jnp.sum(interp_harmonics, axis=3) + 0.5, a_min=0.0, a_max=100000)
-np.testing.assert_almost_equal(extra["try_8_samples_color.npy"], samples_colors)
-
-deltas_times_sigmas = jnp.squeeze(deltas_times_sigmas)
-tmp1 = jnp.exp(cum_weighted_deltas)
-tmp2 = 1 - jnp.exp(deltas_times_sigmas)
-rays_color = jnp.sum(tmp1[:, :, None] * tmp2[:, :, None] * samples_colors[:, :-1, :], axis=1)
-
-np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], rays_color)
+# tmin = valid_tmin[0]
+# tmax = valid_tmax[0]
+# samples_2 = (tmax - tmin) * tics + tmin
+# rays_dirs = valid_rays_dirs[0]
+# rays_origins = valid_rays_origins[0]
+# tmp = jnp.matmul(samples_2[:, None], rays_dirs[None, :], precision='highest')
+# tmp = jnp.add(tmp, rays_origins[None, :])
+#
+# tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
+# tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
+# sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
+# np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
+#
+#
+#
+# samples = extra["try_0_samples.npy"]
+# np.testing.assert_almost_equal(samples, samples_2)
+#
+# tmp = jnp.matmul(samples_2[:, :, None], valid_rays_dirs[:, None, :], precision='highest')
+# tmp = jnp.add(tmp, valid_rays_origins[:, None, :])
+# sample_vecs = valid_rays_origins[:, None, :] + samples_2[:, :, None] * valid_rays_dirs[:, None, :]
+# np.testing.assert_almost_equal(tmp, extra["try_1_sample_points.npy"])
+#
+#
+#
+# # sample_points = extra["try_1_sample_points.npy"].reshape(-1, 3)
+# sample_points = tmp.reshape((-1, 3))
+#
+# # sample_points = extra["try_1_sample_points.npy"]
+# interp = jit_interp(sample_points, npy_links, npy_data)
+# interp = np.squeeze(interp)
+# interp_sh_coeffs = interp[:, 1:][None, :, :]
+# interp_opacities = interp[:, :1][None, :, :]
+#
+# np.testing.assert_almost_equal(extra["try_3_interp_sh_coeffs.npy"], interp_sh_coeffs)
+# np.testing.assert_almost_equal(extra["try_4_interp_opacities.npy"], interp_opacities)
+#
+# interp_opacities = jnp.clip(interp_opacities, a_min=0.0, a_max=100000)
+#
+#
+# deltas = samples[:, 1:] - samples[:, :-1]
+#
+# np.testing.assert_almost_equal(extra["try_5_deltas.npy"], deltas)
+#
+# interp_sh_coeffs = interp_sh_coeffs.reshape((samples.shape[0], samples.shape[1], 3, 9))
+# interp_opacities = interp_opacities.reshape((samples.shape[0], samples.shape[1], 1))
+# interp_harmonics = interp_sh_coeffs * my_sh[:, None, None, :]
+#
+# deltas_times_sigmas = - deltas[:, :, None] * interp_opacities[:, :-1]
+# np.testing.assert_almost_equal(extra["try_6_deltas_times_sigmas.npy"][:, :, None], deltas_times_sigmas)
+#
+# cum_weighted_deltas = jnp.cumsum(deltas_times_sigmas, axis=1)
+# cum_weighted_deltas = jnp.squeeze(cum_weighted_deltas)
+# tmp = jnp.zeros([1600, 1])
+# cum_weighted_deltas = jnp.concatenate([tmp, cum_weighted_deltas[:, :-1]], axis=1)
+# np.testing.assert_almost_equal(extra["try_7_cum_weighted_deltas.npy"], cum_weighted_deltas)
+#
+# samples_colors = jnp.clip(jnp.sum(interp_harmonics, axis=3) + 0.5, a_min=0.0, a_max=100000)
+# np.testing.assert_almost_equal(extra["try_8_samples_color.npy"], samples_colors)
+#
+# deltas_times_sigmas = jnp.squeeze(deltas_times_sigmas)
+# tmp1 = jnp.exp(cum_weighted_deltas)
+# tmp2 = 1 - jnp.exp(deltas_times_sigmas)
+# rays_color = jnp.sum(tmp1[:, :, None] * tmp2[:, :, None] * samples_colors[:, :-1, :], axis=1)
+#
+# np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], rays_color)
 
 
 
@@ -287,112 +291,113 @@ def conv_to_vmap(ori, dir, tmin, tmax, my_sh_in, npy_links_in, npy_data_in):
 
 jit_again = jit(vmap(conv_to_vmap, in_axes=(0, 0, 0, 0, 0, None, None)))
 
-
-
-sample_points = sample_points.reshape([1600, 461, 3])
-res = jit_again(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, my_sh, npy_links, npy_data)
-np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], res)
+# res = jit_again(valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, my_sh, npy_links, npy_data)
+# np.testing.assert_almost_equal(extra["try_9_rays_color.npy"], res)
 
 
 
 
 
-
-
-def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
-    tics = jnp.linspace(tmin, max_dt + tmin, num=nb, dtype=jnp.float64)
-    samples = ori[None, :] + tics[:, None] * dir[None, :]
-    samples = jnp.clip(samples, 0, 254)
-    interp = jit_interp(samples, npy_links, npy_data)
-    interp = jnp.squeeze(interp)
-
-    sigma = interp[:, :1]
-    rgb = interp[:, 1:]
-
-    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = rgb.reshape(-1, 3, 9)
-    rgb = rgb * sh[None, None, :]
-    rgb = jnp.sum(rgb, axis=2)
-    rgb = rgb + 0.5 #correction 1
-    rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
-    tmp = step_size * sigma * delta_scale
-
-    var = 1 - jnp.exp(-tmp)
-    Ti = jnp.exp(jnp.cumsum(-tmp))
-    Ti = Ti[:, None]
-    coefs = Ti * var
-    rgb = coefs * rgb
-    rgb = jnp.sum(rgb, axis=0)
-    return rgb
-jit_main = jit(vmap(main_to_vmap, in_axes=(0, 0, 0, 0, None, None, None)))
-
-def main_to_vmap_samples_provided(samples, sh, npy_links, npy_data):
-    interp = jit_interp(samples, npy_links, npy_data)
-    interp = jnp.squeeze(interp)
-
-    sigma = interp[:, :1]
-    rgb = interp[:, 1:]
-
-    sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
-    rgb = rgb.reshape(-1, 3, 9)
-
-    sh_ray = sh[None, None, :]
-    rgb = rgb * sh_ray
-
-    rgb = jnp.sum(rgb, axis=2)
-    rgb = rgb + 0.5 #correction 1
-    rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
-    tmp = step_size * sigma * delta_scale
-
-    var = 1 - jnp.exp(-tmp)
-    Ti = jnp.exp(jnp.cumsum(-tmp))
-    Ti = Ti[:, None]
-    coefs = Ti * var
-    rgb = coefs * rgb
-    rgb = jnp.sum(rgb, axis=0)
-    return rgb
-jit_samples_main = jit(vmap(main_to_vmap_samples_provided, in_axes=(0, 0, None, None)))
-
-
-# ori = jax.device_put(jnp.array(valid_rays_origins))
-# dir = jax.device_put(jnp.array(valid_rays_dirs))
-# tmin = jax.device_put(jnp.array(valid_tmin))
-npy_links = jax.device_put(jnp.array(npy_links))
-npy_data = jax.device_put(jnp.array(npy_data))
-torch_samples = jax.device_put(jnp.array(torch_samples))
-valid_sh = jax.device_put(jnp.array(valid_sh))
-# sh_mine = eval_sh_bases_mine(np.array(valid_rays_dirs))
-# sh_mine = jax.device_put(jnp.array(sh_mine))
-
-res = jit_samples_main(torch_samples, valid_sh, npy_links, npy_data)
-
-np.testing.assert_almost_equal(res, torch_rays)
 
 #
-# batch_size = 5000
-# batch_nb = jnp.ceil(len(ori) / batch_size)
+# def main_to_vmap(ori, dir, tmin, sh, max_dt, npy_links, npy_data):
+#     tics = jnp.linspace(tmin, max_dt + tmin, num=nb, dtype=jnp.float64)
+#     samples = ori[None, :] + tics[:, None] * dir[None, :]
+#     samples = jnp.clip(samples, 0, 254)
+#     interp = jit_interp(samples, npy_links, npy_data)
+#     interp = jnp.squeeze(interp)
 #
-# tmp_rgb = []
-# for i in range(int(batch_nb - 1)):
-#     res = jit_main(ori[i * batch_size: (i + 1) * batch_size],
-#                    dir[i * batch_size: (i + 1) * batch_size],
-#                    tmin[i * batch_size: (i + 1) * batch_size],
-#                    sh_mine[i * batch_size: (i + 1) * batch_size],
-#                    max_dt, npy_links, npy_data)
-#     res.block_until_ready()
-#     tmp_rgb.append(res)
+#     sigma = interp[:, :1]
+#     rgb = interp[:, 1:]
 #
-# last_dab = len(ori) - (batch_nb - 1) * batch_size
-# res = jit_main(ori[int((batch_nb - 1) * batch_size):],
-#                dir[int((batch_nb - 1) * batch_size):],
-#                tmin[int((batch_nb - 1) * batch_size):],
-#                sh_mine[int((batch_nb - 1) * batch_size):],
-#                max_dt, npy_links, npy_data)
-# tmp_rgb.append(res)
-# colors = np.concatenate(tmp_rgb)
+#     sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+#     rgb = rgb.reshape(-1, 3, 9)
+#     rgb = rgb * sh[None, None, :]
+#     rgb = jnp.sum(rgb, axis=2)
+#     rgb = rgb + 0.5 #correction 1
+#     rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
+#     tmp = step_size * sigma * delta_scale
+#
+#     var = 1 - jnp.exp(-tmp)
+#     Ti = jnp.exp(jnp.cumsum(-tmp))
+#     Ti = Ti[:, None]
+#     coefs = Ti * var
+#     rgb = coefs * rgb
+#     rgb = jnp.sum(rgb, axis=0)
+#     return rgb
+# jit_main = jit(vmap(main_to_vmap, in_axes=(0, 0, 0, 0, None, None, None)))
+#
+# def main_to_vmap_samples_provided(samples, sh, npy_links, npy_data):
+#     interp = jit_interp(samples, npy_links, npy_data)
+#     interp = jnp.squeeze(interp)
+#
+#     sigma = interp[:, :1]
+#     rgb = interp[:, 1:]
+#
+#     sigma = jnp.clip(sigma, a_min=0.0, a_max=100000)
+#     rgb = rgb.reshape(-1, 3, 9)
+#
+#     sh_ray = sh[None, None, :]
+#     rgb = rgb * sh_ray
+#
+#     rgb = jnp.sum(rgb, axis=2)
+#     rgb = rgb + 0.5 #correction 1
+#     rgb = jnp.clip(rgb, a_min=0.0, a_max=100000)
+#     tmp = step_size * sigma * delta_scale
+#
+#     var = 1 - jnp.exp(-tmp)
+#     Ti = jnp.exp(jnp.cumsum(-tmp))
+#     Ti = Ti[:, None]
+#     coefs = Ti * var
+#     rgb = coefs * rgb
+#     rgb = jnp.sum(rgb, axis=0)
+#     return rgb
+# jit_samples_main = jit(vmap(main_to_vmap_samples_provided, in_axes=(0, 0, None, None)))
+#
+#
+# # ori = jax.device_put(jnp.array(valid_rays_origins))
+# # dir = jax.device_put(jnp.array(valid_rays_dirs))
+# # tmin = jax.device_put(jnp.array(valid_tmin))
+# npy_links = jax.device_put(jnp.array(npy_links))
+# npy_data = jax.device_put(jnp.array(npy_data))
+# torch_samples = jax.device_put(jnp.array(torch_samples))
+# valid_sh = jax.device_put(jnp.array(valid_sh))
+# # sh_mine = eval_sh_bases_mine(np.array(valid_rays_dirs))
+# # sh_mine = jax.device_put(jnp.array(sh_mine))
+#
+# res = jit_samples_main(torch_samples, valid_sh, npy_links, npy_data)
+#
+# np.testing.assert_almost_equal(res, torch_rays)
+
+batch_size = 5000
+batch_nb = jnp.ceil(len(valid_rays_dirs) / batch_size)
+
+tmp_rgb = []
+for i in range(int(batch_nb - 1)):
+    res = jit_again(valid_rays_origins[i * batch_size: (i + 1) * batch_size],
+                   valid_rays_dirs[i * batch_size: (i + 1) * batch_size],
+                   valid_tmin[i * batch_size: (i + 1) * batch_size],
+                   valid_tmax[i * batch_size: (i + 1) * batch_size],
+                   valid_sh[i * batch_size: (i + 1) * batch_size],
+                   npy_links, npy_data)
+    res.block_until_ready()
+    tmp_rgb.append(res)
+
+last_dab = len(valid_rays_dirs) - (batch_nb - 1) * batch_size
+res = jit_again(valid_rays_origins[int((batch_nb - 1) * batch_size):],
+                valid_rays_dirs[int((batch_nb - 1) * batch_size):],
+                valid_tmin[int((batch_nb - 1) * batch_size):],
+                valid_tmax[int((batch_nb - 1) * batch_size):],
+                valid_sh[int((batch_nb - 1) * batch_size):],
+                npy_links, npy_data)
+tmp_rgb.append(res)
+colors = np.concatenate(tmp_rgb)
 
 complete_colors = np.zeros((rays_origins.shape[0], 3))
 complete_colors[mask] = colors
+
+complete_colors[complete_colors > 1] = 1
+complete_colors[complete_colors < 0] = 0
 
 img = complete_colors.reshape([800,800,3])
 import cv2
@@ -400,3 +405,4 @@ img = (img * 255).astype(np.uint8)
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 print("hello")
+
