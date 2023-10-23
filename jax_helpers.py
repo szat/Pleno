@@ -42,14 +42,57 @@ def trilinear_interpolation_to_vmap(vecs, links, values_compressed):
     weights = jnp.array([a000, a010, a100, a110])
 
     coeff = jnp.array([v000, v001, v010, v011, v100, v101, v110, v111])
+    # coeff = coeff[:, None]
     # return coeff, weights, tmpZ, zd
     weights = weights[:, None]
+    if coeff.ndim == 1:
+        coeff = coeff[:, None]
 
     out = jnp.sum(weights * coeff[[0, 2, 4, 6], :], axis=0) * tmpZ + jnp.sum(weights * coeff[[1, 3, 5, 7], :], axis=0) * zd
     out = out[None, :]
     return out
 
 jit_trilinear_interp = jit(vmap(trilinear_interpolation_to_vmap, in_axes=(0, None, None)))
+
+def trilinear_interpolation_to_vmap_no_links(vecs, data):
+    # xyz = vecs - origin
+    # xyz = xyz / delta_voxel
+    xyz = vecs
+    xyz_floor = jnp.floor(xyz)
+    xd, yd, zd = xyz - xyz_floor
+    x0, y0, z0 = xyz_floor.astype(int)
+
+    v000 = data[x0, y0, z0]
+    v100 = data[x0+1, y0, z0]
+    v010 = data[x0, y0+1, z0]
+    v001 = data[x0, y0, z0+1]
+    v110 = data[x0+1, y0+1, z0]
+    v011 = data[x0, y0+1, z0+1]
+    v101 = data[x0+1, y0, z0+1]
+    v111 = data[x0+1, y0+1, z0+1]
+
+    tmpX = 1 - xd
+    tmpY = 1 - yd
+    tmpZ = 1 - zd
+    a000 = tmpX * tmpY
+    a100 = xd * tmpY
+    a010 = tmpX * yd
+    a110 = xd * yd
+    weights = jnp.array([a000, a010, a100, a110])
+
+    coeff = jnp.array([v000, v001, v010, v011, v100, v101, v110, v111])
+    # coeff = coeff[:, None]
+    # return coeff, weights, tmpZ, zd
+    weights = weights[:, None]
+    if coeff.ndim == 1:
+        coeff = coeff[:, None]
+
+    out = jnp.sum(weights * coeff[[0, 2, 4, 6], :], axis=0) * tmpZ + jnp.sum(weights * coeff[[1, 3, 5, 7], :], axis=0) * zd
+    out = out[None, :]
+    return out
+
+jit_trilinear_interp_no_links = jit(vmap(trilinear_interpolation_to_vmap_no_links, in_axes=(0, None)))
+
 
 def rotation_align(from_vec, to_vec):
     assert from_vec.shape == to_vec.shape, "from_vec and to_vec need to be of the same shape"
@@ -224,6 +267,34 @@ def eval_sh_bases_mine(dirs):
                 result[..., 14] = SH_C3[5] * z * (xx - yy)
                 result[..., 15] = SH_C3[6] * x * (xx - 3 * yy)
 
+    return result
+
+def eval_sh_bases_mine2(dirs):
+    """
+    Evaluate spherical harmonics bases at unit directions,
+    without taking linear combination.
+    At each point, the final result may the be
+    obtained through simple multiplication.
+
+    :param basis_dim: int SH basis dim. Currently, 1-25 square numbers supported
+    :param dirs: np.ndarray (..., 3) unit directions
+
+    :return: np.ndarray (..., basis_dim)
+    """
+    basis_dim = 9
+    result = jnp.empty(basis_dim, dtype=dirs.dtype)
+    result.at[0].set(SH_C0)
+    x, y, z = dirs[0], dirs[1], dirs[2]
+    result.at[1].set(-SH_C1 * y)
+    result.at[2].set(SH_C1 * z)
+    result.at[3].set(-SH_C1 * x)
+    xx, yy, zz = x * x, y * y, z * z
+    xy, yz, xz = x * y, y * z, x * z
+    result.at[4].set(SH_C2[0] * xy)
+    result.at[5].set(SH_C2[1] * yz)
+    result.at[6].set(SH_C2[2] * (2.0 * zz - xx - yy))
+    result.at[7].set(SH_C2[3] * xz)
+    result.at[8].set(SH_C2[4] * (xx - yy))
     return result
 
 
