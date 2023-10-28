@@ -140,26 +140,17 @@ import cv2
 img = (img * 255).astype(np.uint8)
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-print("hello")
 
 
-
-
-
-i = 0
-res = render_jit(x[i * batch_size: batch_size], npy_links, npy_data)
-
-
-
-
-
-
-
+# training part
 def mse(x, truth, links, params):
     pred = jnp.squeeze(render_jit(x, links, params))
     out = jnp.mean((pred - truth) ** 2)
     return out
 
+i = 0
+batch_size = 2000
+res = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_links, npy_data)
 tmp = mse(x[i * batch_size: batch_size], res, npy_links, npy_data)
 
 grad_mse = value_and_grad(mse, argnums=3)
@@ -167,25 +158,28 @@ grad_mse_batch = jit(grad_mse)
 
 v, g = grad_mse_batch(x[i * batch_size: batch_size], res, npy_links, npy_data)
 
+@jax.jit
 def train_step(x, truth, links, params, learning_rate):
-    loss, gradient = grad_mse_batch(x, truth, links, npy_data)
+    loss, gradient = grad_mse_batch(x, truth, links, params)
     params = params - learning_rate * gradient
     return loss, params
 
-train_step_jit = jit(train_step)
-# l, p = train_step(params_start, x, colors_true_batch, 0.001)
-# l, p = train_step_jit(params_start, x, colors_true_batch, 0.001)
-
-mean = 0
-std_dev = 1
+mean = 3
+std_dev = 2
 # Generating Gaussian noise of shape (5463817, 28)
-gaussian_noise = np.random.normal(mean, std_dev, size=(5463817, 28))
+gaussian_noise = np.random.normal(mean, std_dev, npy_data.shape)
+npy_data_start = npy_data + gaussian_noise
+
+# i = 0
+# batch_size = 2000
+# res2 = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_links, npy_data_start)
+# tmp = mse(x[i * batch_size: batch_size], res, npy_links, npy_data_start)
 
 learning_rate = 0.01
 loss_hist = []
-params = npy_data + gaussian_noise
-for i in range(10):
-    loss, params = train_step_jit(x[:batch_size], res, npy_links, params, learning_rate)
+params = npy_data_start
+for i in range(100):
+    loss, params = train_step(x[:batch_size], res, npy_links, params, learning_rate)
     loss_hist.append(loss)
     print(i)
 
