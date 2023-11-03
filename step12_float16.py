@@ -4,9 +4,7 @@ import sys
 sys.path.append('.')
 import cv2
 import numpy as np
-from jax_helpers import *
-from functools import partial
-from jax import value_and_grad
+from jax_helpers_float16 import *
 
 model_name = "lego"
 # path_to_weigths = f"/home/diego/data/nerf/ckpt_syn/256_to_512_fasttv/{model_name}/ckpt.npz"
@@ -22,30 +20,20 @@ data = np.load(path_to_weigths, allow_pickle=True)
 
 # Access data arrays using keys
 npy_radius = data['radius']
-npy_center = data['center']
+npy_center = np.float16(data['center'])
 npy_links = data['links']
-npy_density_data = data['density_data']
-npy_sh_data = data['sh_data']
+npy_density_data = np.float16(data['density_data'])
+npy_sh_data = np.float16(data['sh_data'])
 npy_basis_type = data['basis_type']
 
-tmp = np.zeros([1, 28])
-npy_data = np.hstack([npy_density_data, npy_sh_data])
-npy_data = np.vstack([tmp, npy_data])
-
-npy_links[npy_links >= 0] += 1
-assert (npy_links == 0).sum() == 0
+# kill one voxel for simplicity and indexing
+npy_density_data[0] = -999
+npy_sh_data[0] = -999
 npy_links[npy_links < 0] = 0
-assert (npy_links == 0).sum() + (npy_links > 0).sum() == 512**3
-assert (npy_links > 0).sum() == len(npy_data) - 1 #since we did a 0 padding, collapse everything to 0
 
-links2 = npy_links[::4, ::4, ::4]
-npy_data2 = npy_data[np.unique(links2)]
-assert (links2 > 0).sum() == len(npy_data2) - 1 #again cause of 0 padding
-links2[links2 > 0] = np.arange(1, len(npy_data2))
-assert len(np.unique(links2)) == len(npy_data2)
-
-npy_data = npy_data2
-npy_links = links2
+npy_density_data = npy_density_data[npy_links[::4, ::4, ::4]]
+npy_sh_data = npy_sh_data[npy_links[::4, ::4, ::4]]
+npy_data = np.concatenate((npy_density_data, npy_sh_data), axis=3)
 
 origin = np.array([size_model + 20., size_model + 20., size_model + 20.])
 orientation = np.array([-1., -1., -1.])
@@ -61,9 +49,21 @@ ray_inv_dirs = 1. / rays_dirs
 tmin, tmax = intersect_ray_aabb(rays_origins, ray_inv_dirs, box_min, box_max)
 sh_mine = eval_sh_bases_mine(rays_dirs)
 
+mask = np.ones([800, 800])
+mask = mask == 1
+mask = mask.flatten()
+
 mask = tmin < tmax
-x = np.concatenate((rays_origins, rays_dirs, tmin[:, None], tmax[:, None], sh_mine), axis=1)
-x = x[mask]
+valid_rays_origins = rays_origins[mask]
+valid_rays_dirs = rays_dirs[mask]
+valid_tmin = tmin[mask]
+valid_tmin = valid_tmin[:, None]
+valid_tmax = tmax[mask]
+valid_tmax = valid_tmax[:, None]
+valid_sh = sh_mine[mask]
+
+x = np.concatenate((valid_rays_origins, valid_rays_dirs, valid_tmin, valid_tmax, valid_sh), axis=1)
+x = np.float16(x)
 
 colors = np.zeros([800*800, 3])
 max_dt = np.max(tmax - tmin)
@@ -71,10 +71,10 @@ nb = 100
 step_size = 0.5
 delta_scale = 1/128
 
-tics = np.arange(0.05, 0.95, step=1/nb_samples)
+tics = np.float16(np.arange(0.05, 0.95, step=1/nb_samples))
 tics = jnp.array(tics)
 
-def render(x, npy_links_in, npy_data_in):
+def render(x, npy_data_in):
     ori = x[:3]
     dir = x[3:6]
     tmin = x[6:7]
@@ -85,7 +85,7 @@ def render(x, npy_links_in, npy_data_in):
     tmp = jnp.matmul(samples[:, None], dir[None, :], precision='highest')
     tmp = jnp.add(tmp, ori[None, :])
     sample_points_in = tmp
-    interp = jit_trilinear_interp(sample_points_in, npy_links_in, npy_data_in)
+    interp = jit_trilinear_interp_no_links(sample_points_in, npy_data_in)
     # out = interp
     interp = np.squeeze(interp)
     interp_sh_coeffs = interp[:, 1:][None, :, :]
@@ -102,7 +102,7 @@ def render(x, npy_links_in, npy_data_in):
     deltas_times_sigmas = - deltas * interp_opacities[:-1]
 
     cum_weighted_deltas = jnp.cumsum(deltas_times_sigmas)
-    cum_weighted_deltas = jnp.concatenate([jnp.zeros(1), cum_weighted_deltas[:-1]])
+    cum_weighted_deltas = jnp.concatenate([jnp.zeros(1, dtype='float16'), cum_weighted_deltas[:-1]])
 
     samples_colors = jnp.clip(jnp.sum(interp_harmonics, axis=3) + 0.5, a_min=0.0, a_max=100000)
     samples_colors = jnp.squeeze(samples_colors)
@@ -113,19 +113,18 @@ def render(x, npy_links_in, npy_data_in):
     out = rays_color
     return out
 
-render_jit = jit(vmap(render, in_axes=(0, None, None)))
+render_jit = jit(vmap(render, in_axes=(0, None)))
 
-batch_size = 4000
-batch_nb = jnp.ceil(len(x) / batch_size)
+batch_size = 10000
+batch_nb = jnp.ceil(len(valid_rays_dirs) / batch_size)
+
 tmp_rgb = []
 for i in range(int(batch_nb - 1)):
-    res = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_links, npy_data)
+    res = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_data)
     res.block_until_ready()
     tmp_rgb.append(res)
-    print(i)
 
-last_dab = len(x) - (batch_nb - 1) * batch_size
-res = render_jit(x[int((batch_nb - 1) * batch_size):], npy_links, npy_data)
+res = render_jit(x[int((batch_nb - 1) * batch_size):], npy_data)
 tmp_rgb.append(res)
 colors = np.concatenate(tmp_rgb)
 
@@ -140,54 +139,8 @@ import cv2
 img = (img * 255).astype(np.uint8)
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+# blue is the most interesting
+channel_b, channel_g, channel_r = cv2.split(img)
 
-
-# training part
-def mse(x, truth, links, params):
-    pred = jnp.squeeze(render_jit(x, links, params))
-    out = jnp.mean((pred - truth) ** 2)
-    return out
-
-i = 0
-batch_size = 2000
-res = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_links, npy_data)
-tmp = mse(x[i * batch_size: batch_size], res, npy_links, npy_data)
-
-grad_mse = value_and_grad(mse, argnums=3)
-grad_mse_batch = jit(grad_mse)
-
-v, g = grad_mse_batch(x[i * batch_size: batch_size], res, npy_links, npy_data)
-
-@jax.jit
-def train_step(x, truth, links, params, learning_rate):
-    loss, gradient = grad_mse_batch(x, truth, links, params)
-    params = params - learning_rate * gradient
-    return loss, params
-
-mean = 3
-std_dev = 2
-# Generating Gaussian noise of shape (5463817, 28)
-gaussian_noise = np.random.normal(mean, std_dev, npy_data.shape)
-npy_data_start = npy_data + gaussian_noise
-
-# i = 0
-# batch_size = 2000
-# res2 = render_jit(x[i * batch_size: (i + 1) * batch_size], npy_links, npy_data_start)
-# tmp = mse(x[i * batch_size: batch_size], res, npy_links, npy_data_start)
-
-learning_rate = 0.01
-loss_hist = []
-params = npy_data_start
-for i in range(100):
-    loss, params = train_step(x[:batch_size], res, npy_links, params, learning_rate)
-    loss_hist.append(loss)
-    print(i)
-
-import matplotlib.pyplot as plt
-plt.plot(loss_hist)
-plt.show()
-
-
-
-
+print("hello")
 
