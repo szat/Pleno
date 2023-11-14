@@ -52,10 +52,15 @@ npy_density_data = np.float16(data['density_data'])
 npy_sh_data = np.float16(data['sh_data'])
 npy_basis_type = data['basis_type']
 
+mask_sphere = filter_over_sphere(npy_links, np.ones(3)*(512/2), 512/2-10)
+npy_links[~mask_sphere] = 0
+
 # kill one voxel for simplicity and indexing
 npy_density_data[0] = -999
 npy_sh_data[0] = -999
 npy_links[npy_links < 0] = 0
+
+
 
 # Here we take only one channel npy_sh_data[:,:,:,:9]
 npy_density_data = npy_density_data[npy_links[::4, ::4, ::4]]
