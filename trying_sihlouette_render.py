@@ -155,6 +155,48 @@ front = np.array(front)
 
 visualize_3d_points(front)
 
+mask_box = is_inside_box(front, 10*np.ones(3), (size_model-10)*np.ones(3))
+front = front[mask_box]
+
+
+pcd = o3d.geometry.PointCloud()
+pcd.points = o3d.utility.Vector3dVector(front)
+uniform_color = [1, 0, 0]  # Red color
+pcd.colors = o3d.utility.Vector3dVector([uniform_color] * len(front))
+# Visualize the point cloud
+o3d.visualization.draw_geometries([pcd])
+
+x = x[mask_box]
+
+# sanity check draw the rays over the front of the 3d model
+tmp = front - x[:, :3]
+tmp_norm = np.linalg.norm(tmp, axis = 1)
+tmp = tmp / tmp_norm[:, None]
+# this now should be tha same as the directions
+# we are in float16, hence there will be some errors
+np.testing.assert_allclose(tmp, x[:, 3:6], atol = 0.001)
+
+line_end = front + x[:, 3:6] * 5
+line_start = front + x[:, 3:6] * (-1)
+
+#every 10
+line_end = line_end[::43]
+line_start = line_start[::43]
+
+# Define multiple points for the lines
+line_points =  np.vstack([line_start, line_end])
+lines = []
+for i in range(len(line_end)):
+    lines.append([i, i+len(line_end)])
+
+# Create a LineSet object
+line_set = o3d.geometry.LineSet()
+line_set.points = o3d.utility.Vector3dVector(line_points)
+line_set.lines = o3d.utility.Vector2iVector(lines)
+line_set.paint_uniform_color([0, 1, 0])  # Red color for the line
+
+o3d.visualization.draw_geometries([pcd, line_set])
+
 def render_c1(x, npy_data_in):
     ori = x[:3]
     dir = x[3:6]
